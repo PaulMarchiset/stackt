@@ -1,7 +1,62 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+
+const CODE_LENGTH = 6; // must match Supabase "Email OTP Length"
+
+/** Segmented code input: one box per digit, with auto-advance, backspace and paste. */
+function CodeBoxes({ value, onChange, onComplete }: {
+  value: string; onChange: (v: string) => void; onComplete: () => void;
+}) {
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const setAt = (i: number, ch: string) => {
+    const arr = value.padEnd(CODE_LENGTH, ' ').split('');
+    arr[i] = ch || ' ';
+    return arr.join('').replace(/ /g, '').slice(0, CODE_LENGTH);
+  };
+  return (
+    <div className="otp">
+      {Array.from({ length: CODE_LENGTH }).map((_, i) => (
+        <input
+          key={i}
+          ref={(el) => { refs.current[i] = el; }}
+          className="otp-box"
+          inputMode="numeric"
+          autoComplete={i === 0 ? 'one-time-code' : 'off'}
+          maxLength={1}
+          value={value[i] ?? ''}
+          autoFocus={i === 0}
+          onChange={(e) => {
+            const d = e.target.value.replace(/\D/g, '');
+            if (!d) { onChange(setAt(i, '')); return; }
+            const next = setAt(i, d[d.length - 1]);
+            onChange(next);
+            if (i < CODE_LENGTH - 1) refs.current[i + 1]?.focus();
+            else if (next.length === CODE_LENGTH) onComplete();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Backspace') {
+              e.preventDefault();
+              if (value[i]) onChange(setAt(i, ''));
+              else if (i > 0) { refs.current[i - 1]?.focus(); onChange(setAt(i - 1, '')); }
+            } else if (e.key === 'ArrowLeft' && i > 0) refs.current[i - 1]?.focus();
+            else if (e.key === 'ArrowRight' && i < CODE_LENGTH - 1) refs.current[i + 1]?.focus();
+          }}
+          onPaste={(e) => {
+            e.preventDefault();
+            const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, CODE_LENGTH);
+            if (!digits) return;
+            onChange(digits);
+            const idx = Math.min(digits.length, CODE_LENGTH - 1);
+            refs.current[idx]?.focus();
+            if (digits.length === CODE_LENGTH) onComplete();
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function LoginForm() {
   const supabase = createClient();
@@ -31,8 +86,9 @@ export default function LoginForm() {
     }
   }
 
-  async function verify(e: React.FormEvent) {
-    e.preventDefault();
+  async function verify(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (busy || code.length < CODE_LENGTH) return;
     setError('');
     setBusy(true);
     const { error } = await supabase.auth.verifyOtp({
@@ -62,20 +118,11 @@ export default function LoginForm() {
     return (
       <div className="auth-form">
         <p className="auth-codenote">
-          We sent a 6-digit code to <strong>{email}</strong>.
+          We sent a {CODE_LENGTH}-digit code to <strong>{email}</strong>.
         </p>
         <form onSubmit={verify}>
-          <input
-            className="auth-input auth-code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="••••••"
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            autoFocus
-          />
-          <button className="btn solid auth-submit" type="submit" disabled={busy || code.length < 6}>
+          <CodeBoxes value={code} onChange={setCode} onComplete={() => verify()} />
+          <button className="btn solid auth-submit" type="submit" disabled={busy || code.length < CODE_LENGTH}>
             {busy ? 'Verifying…' : 'Verify & sign in'}
           </button>
         </form>

@@ -535,7 +535,14 @@ button { font-family: inherit; }
 .auth-error { color: var(--danger); font-size: 12.5px; margin: 4px 0 0; }
 .auth-codenote { color: var(--ink-soft); font-size: 13px; margin: 0; }
 .auth-codenote strong { color: var(--ink); }
-.auth-code { text-align: center; font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: 10px; padding: 14px 12px; }
+.otp { display: flex; gap: 8px; justify-content: center; }
+.otp-box {
+  width: 44px; height: 54px; text-align: center;
+  font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--ink);
+  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: 10px; outline: none;
+  transition: border-color 130ms var(--ease), box-shadow 130ms var(--ease), background 130ms var(--ease);
+}
+.otp-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
 .auth-sent { text-align: center; color: var(--ink-soft); font-size: 14px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 
 /* ---------- Landing page ---------- */
