@@ -1,9 +1,11 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { Project, Card } from '@/lib/types';
 import BoardApp from './BoardApp';
 
 export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'Board', robots: { index: false, follow: false } };
 
 export default async function BoardPage({
   searchParams

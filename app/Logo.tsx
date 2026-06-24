@@ -1,9 +1,25 @@
+'use client';
+
+import { useState } from 'react';
+
 /** Full Stackt wordmark. Bars keep their colors; the text uses currentColor
- *  so it reads on light or dark backgrounds (set `color` on a parent). */
+ *  so it reads on light or dark backgrounds (set `color` on a parent).
+ *  Hovering plays the bar animation once and always lets it finish. */
 export default function Logo({ height = 25, className }: { height?: number; className?: string }) {
   const width = (height * 129) / 25;
+  const [playing, setPlaying] = useState(false);
+
   return (
-    <svg width={width} height={height} viewBox="0 0 129 25" fill="none" className={className} aria-label="Stackt">
+    <svg
+      width={width} height={height} viewBox="0 0 129 25" fill="none"
+      className={(className ? className + ' ' : '') + (playing ? 'playing' : '')}
+      aria-label="Stackt"
+      onMouseEnter={() => setPlaying(true)}
+      onAnimationEnd={(e) => {
+        const t = e.target as SVGElement;
+        if (t.classList?.contains('bar-3')) setPlaying(false); // last bar finished
+      }}
+    >
       <rect className="bar bar-1" width="30" height="7" rx="2" fill="#E58E36" />
       <rect className="bar bar-2" x="8" y="9" width="22" height="7" rx="2" fill="#4B73F5" />
       <rect className="bar bar-3" x="14" y="18" width="16" height="7" rx="2" fill="#2CBE3D" />

@@ -318,6 +318,12 @@ export default function BoardApp({
           onAdd={(date) => { setNewCardType('update'); setNewCardDate(date); setEditing('__new__:todo'); }}
           onEdit={(id) => setEditing(id)}
           onToggle={toggleDone}
+          onReschedule={(id, date) => {
+            const c = cards.find((x) => x.id === id);
+            const nd = date || null;
+            if (!c || c.target_date === nd) return;
+            patchCard(id, { target_date: nd });
+          }}
           onSubmit={(vals) => {
             if (editing && editing.startsWith('__new__')) void addCard(vals, 'todo');
             else if (editing) patchCard(editing, vals);

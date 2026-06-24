@@ -12,6 +12,39 @@ export default async function Landing() {
   const ctaHref = user ? '/projects' : '/login';
   const ctaLabel = user ? 'Open your projects' : 'Get started — free';
 
+  const faqs: { q: string; a: string }[] = [
+    { q: 'Is Stackt free?', a: 'Yes. Sign in and start tracking — no credit card, no trial wall.' },
+    { q: 'Can I manage multiple projects?', a: 'Yes. Create as many projects as you want and switch between them instantly from one place.' },
+    { q: 'Does it work for teams or just solo?', a: 'Both. Every account has private boards, so it fits a solo side project or your slice of a team’s workflow.' },
+    { q: 'What can I track?', a: 'Updates and bugs across versions, on a kanban board (To do / In progress / Done) and a horizontal timeline calendar.' },
+    { q: 'Do I need a password?', a: 'No. Sign in with Google or a one-click magic link sent to your email.' }
+  ];
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareApplication',
+        name: 'Stackt',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Web',
+        url: 'https://stackt.paulmarchiset.me',
+        description:
+          'Stackt is a simple kanban and timeline app to plan releases and track versions and bugs across all your projects.',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+        author: { '@type': 'Person', name: 'Paul Marchiset', url: 'https://paulmarchiset.me' }
+      },
+      {
+        '@type': 'FAQPage',
+        mainEntity: faqs.map((f) => ({
+          '@type': 'Question',
+          name: f.q,
+          acceptedAnswer: { '@type': 'Answer', text: f.a }
+        }))
+      }
+    ]
+  };
+
   const features: { bar: string; title: string; body: string }[] = [
     { bar: '#E58E36', title: 'A board that gets out of the way', body: 'To do · In progress · Done. Drag a card, it moves. No setup, no ceremony, no 12-step onboarding.' },
     { bar: '#4B73F5', title: 'Versioned by design', body: 'Group cards by version, give each release its own color, and archive it in one click when it ships.' },
@@ -23,6 +56,7 @@ export default async function Landing() {
 
   return (
     <div className="lp">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <header className="lp-nav">
         <Logo height={22} className="brand-logo-full" />
         <div className="meta-spacer" />
@@ -67,6 +101,18 @@ export default async function Landing() {
             <p>{f.body}</p>
           </div>
         ))}
+      </section>
+
+      <section className="lp-faq">
+        <h2 className="lp-h2">Questions, answered</h2>
+        <div className="lp-faq-list">
+          {faqs.map((f, i) => (
+            <div key={i} className="lp-faq-item">
+              <h3>{f.q}</h3>
+              <p>{f.a}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="lp-final">

@@ -4,51 +4,85 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginForm() {
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
   const supabase = createClient();
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
   const redirectTo =
     typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
 
-  async function sendMagicLink(e: React.FormEvent) {
+  async function sendCode(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setBusy(true);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: redirectTo }
+      options: { shouldCreateUser: true }
     });
     setBusy(false);
     if (error) {
       console.error('signInWithOtp error:', error);
-      setError(error.message || "Impossible d'envoyer l'email — vérifie la configuration SMTP.");
-    } else setSent(true);
+      setError(error.message || "Couldn't send the code — check the email or SMTP config.");
+    } else {
+      setStep('code');
+    }
+  }
+
+  async function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code.trim(),
+      type: 'email'
+    });
+    setBusy(false);
+    if (error) {
+      console.error('verifyOtp error:', error);
+      setError(error.message || 'Invalid or expired code.');
+    } else {
+      window.location.assign('/projects'); // full reload so the server sees the new session
+    }
   }
 
   async function signInWithGoogle() {
     setError('');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo }
-    });
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
     if (error) {
       console.error('signInWithOAuth error:', error);
-      setError(error.message || 'Connexion Google indisponible.');
+      setError(error.message || 'Google sign-in unavailable.');
     }
   }
 
-  if (sent) {
+  if (step === 'code') {
     return (
-      <div className="auth-sent">
-        <p>
-          Check <strong>{email}</strong> for a sign-in link.
+      <div className="auth-form">
+        <p className="auth-codenote">
+          We sent a 6-digit code to <strong>{email}</strong>.
         </p>
-        <button className="btn ghost" onClick={() => setSent(false)}>
+        <form onSubmit={verify}>
+          <input
+            className="auth-input auth-code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="••••••"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            autoFocus
+          />
+          <button className="btn solid auth-submit" type="submit" disabled={busy || code.length < 6}>
+            {busy ? 'Verifying…' : 'Verify & sign in'}
+          </button>
+        </form>
+        <button className="btn ghost" onClick={() => { setStep('email'); setCode(''); setError(''); }}>
           Use a different email
         </button>
+        {error && <p className="auth-error">{error}</p>}
       </div>
     );
   }
@@ -65,8 +99,7 @@ export default function LoginForm() {
         Continue with Google
       </button>
       <div className="auth-divider"><span>or</span></div>
-
-      <form onSubmit={sendMagicLink}>
+      <form onSubmit={sendCode}>
         <input
           type="email"
           required
@@ -76,10 +109,9 @@ export default function LoginForm() {
           className="auth-input"
         />
         <button className="btn solid auth-submit" type="submit" disabled={busy}>
-          {busy ? 'Sending…' : 'Email me a sign-in link'}
+          {busy ? 'Sending…' : 'Email me a code'}
         </button>
       </form>
-
       {error && <p className="auth-error">{error}</p>}
     </div>
   );

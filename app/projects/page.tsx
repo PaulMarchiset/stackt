@@ -1,9 +1,11 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { Project } from '@/lib/types';
 import ProjectsHome, { type CardLite } from './ProjectsHome';
 
 export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'Your projects', robots: { index: false, follow: false } };
 
 export default async function ProjectsPage() {
   const supabase = createClient();

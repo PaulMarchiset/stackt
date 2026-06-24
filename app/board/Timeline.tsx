@@ -15,16 +15,28 @@ const fromIso = (iso: string) => { const [y, m, d] = iso.split('-').map(Number);
 /** Horizontal calendar: consecutive day columns with the cards due each day. */
 export default function Timeline({
   project, projCards, cards, editing, newCardDate,
-  onAdd, onEdit, onToggle, onSubmit, onCancel
+  onAdd, onEdit, onToggle, onReschedule, onSubmit, onCancel
 }: {
   project: Project; projCards: Card[]; cards: Card[];
   editing: string | null; newCardDate: string;
   onAdd: (date: string) => void;
   onEdit: (id: string) => void;
   onToggle: (id: string) => void;
+  onReschedule: (id: string, date: string) => void;
   onSubmit: (v: Partial<Card>) => void;
   onCancel: () => void;
 }) {
+  // Shared drop-zone handlers for a column representing `iso` ('' = no date).
+  const dropProps = (iso: string) => ({
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.currentTarget.classList.add('drop-target'); },
+    onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) e.currentTarget.classList.remove('drop-target'); },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      e.currentTarget.classList.remove('drop-target');
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) onReschedule(id, iso);
+    }
+  });
   const today = todayISO();
   const isNew = !!editing && editing.startsWith('__new__');
   const editCard = editing && !isNew ? cards.find((c) => c.id === editing) : undefined;
@@ -59,7 +71,10 @@ export default function Timeline({
   const event = (c: Card) => {
     const ci = versionColorIndex(project, c.version);
     return (
-      <div key={c.id} className={'cal-event' + (c.done ? ' done' : '') + (c.type === 'bug' ? ' is-bug' : '') + (editing === c.id ? ' editing' : '')}>
+      <div key={c.id} draggable
+        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.id); const el = e.currentTarget; window.setTimeout(() => el.classList.add('dragging'), 0); }}
+        onDragEnd={(e) => e.currentTarget.classList.remove('dragging')}
+        className={'cal-event' + (c.done ? ' done' : '') + (c.type === 'bug' ? ' is-bug' : '') + (editing === c.id ? ' editing' : '')}>
         <div className="cal-ev-top">
           <button className={'checkbox' + (c.done ? ' checked' : '')} title="Mark done" onClick={() => onToggle(c.id)}>
             <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
@@ -82,7 +97,7 @@ export default function Timeline({
     const when = iso < today ? 'past' : iso === today ? 'today' : 'future';
     const items = byDate.get(iso) || [];
     return (
-      <div key={iso} className={'cal-col ' + when} ref={iso === today ? todayRef : undefined}>
+      <div key={iso} className={'cal-col ' + when} ref={iso === today ? todayRef : undefined} {...dropProps(iso)}>
         <div className="cal-col-head">
           <span className="cal-dow2">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
           <span className="cal-dnum">{d.getDate()}</span>
@@ -106,7 +121,7 @@ export default function Timeline({
 
       <div className="cal-h" ref={scrollRef}>
         {undated.length > 0 && (
-          <div className="cal-col nodate">
+          <div className="cal-col nodate" {...dropProps('')}>
             <div className="cal-col-head"><span className="cal-dow2">No date</span></div>
             <div className="cal-col-body">{undated.map(event)}</div>
           </div>
