@@ -6,7 +6,8 @@ export interface Card {
   project_id: string;
   title: string;
   version: string;
-  target_date: string | null; // YYYY-MM-DD
+  target_date: string | null; // YYYY-MM-DD — start day
+  end_date: string | null;    // YYYY-MM-DD — optional last day (multi-day cards)
   status: Status;
   done: boolean;
   type: CardType;
@@ -20,6 +21,7 @@ export interface Project {
   versions: string[];
   completed_versions: string[];
   version_colors: Record<string, number>;
+  favorite: boolean;
   position: number;
 }
 

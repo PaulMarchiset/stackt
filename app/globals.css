@@ -364,7 +364,12 @@ button { font-family: inherit; }
 .edit-row { display: flex; gap: 8px; }
 .edit-row input { flex: 1; }
 .card-edit input.version { font-family: var(--mono); font-size: 12px; }
-.card-edit input.date { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.card-edit input.date { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); width: 100%; }
+.edit-row.date-row { gap: 10px; }
+.date-field { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.date-field > span { font-family: var(--display); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
+.date-field > span em { font-style: normal; font-weight: 600; opacity: 0.7; text-transform: none; letter-spacing: 0; }
+.card-edit input.date:disabled { opacity: 0.5; cursor: not-allowed; }
 .ver-label { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); margin: 2px 0 -2px; }
 .ver-quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .ver-pick {
@@ -390,78 +395,90 @@ button { font-family: inherit; }
 
 .empty-hint { text-align: center; font-size: 12.5px; color: var(--ink-soft); padding: 16px 0 10px; font-family: var(--display); font-weight: 600; opacity: 0.7; }
 
-/* ---------- Horizontal calendar / timeline ---------- */
+/* ---------- Horizontal calendar / timeline (Gantt) ---------- */
 .calendar-h { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .cal-head2 { display: flex; align-items: center; gap: 10px; padding: 10px 28px 8px; }
 .cal-title { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; }
 .cal-head2 .ic { width: 13px; height: 13px; }
-.cal-newcard { max-width: 380px; margin: 4px 28px 12px; }
+
 .cal-h {
-  flex: 1; display: flex; gap: 14px; align-items: flex-start;
-  overflow-x: auto; padding: 10px 28px 36px; scroll-padding-left: 28px;
+  --day-w: 304px; --lane-h: 80px; --cal-gap: 10px;
+  flex: 1; display: flex; overflow-x: auto; padding: 10px 28px 36px; scroll-padding-left: 28px;
 }
 .cal-h::-webkit-scrollbar { height: 10px; }
 .cal-h::-webkit-scrollbar-thumb { background: rgba(26,26,24,0.16); border-radius: 9999px; }
 
-.cal-col { flex: 0 0 230px; width: 230px; display: flex; flex-direction: column; gap: 10px; border-radius: 14px; transition: box-shadow 140ms var(--ease), background 140ms var(--ease); }
-.cal-col.past { opacity: 0.78; }
-.cal-col.drop-target { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
-.cal-col.drop-target.past { opacity: 1; }
-.cal-col-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px 8px; border-bottom: 2px solid var(--border); }
+/* flex:0 0 auto keeps the full (scrollable) width; align-items:stretch on .cal-h makes the
+   grid fill the available height so day columns / the drop highlight run top-to-bottom. */
+.cal-grid { display: grid; width: max-content; flex: 0 0 auto; column-gap: var(--cal-gap); row-gap: 10px; align-items: stretch; }
+
+/* Column headers (grid row 1) */
+.cal-h-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; border-bottom: 2px solid var(--border); }
 .cal-dow2 { font-family: var(--display); font-weight: 800; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
 .cal-dnum { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--ink); }
 .cal-mon { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-mute); margin-left: auto; }
-.cal-col.today .cal-col-head { border-bottom-color: var(--accent); }
-.cal-col.today .cal-dnum { background: var(--accent); border-radius: 8px; padding: 0 7px; }
-.cal-col.nodate .cal-col-head { border-bottom-color: var(--ink-mute); }
+.cal-h-head.today { border-bottom-color: var(--accent); }
+.cal-h-head.today .cal-dnum { background: var(--accent); border-radius: 8px; padding: 0 7px; }
+.cal-h-head.past { opacity: 0.6; }
 
-.cal-col-body { display: flex; flex-direction: column; gap: 10px; min-height: 14px; }
-.cal-event { background: var(--surface); border-radius: 12px; padding: 11px 12px; box-shadow: var(--shadow-sm); cursor: grab; transition: box-shadow 140ms var(--ease), opacity 140ms var(--ease); }
-.cal-event:hover { box-shadow: var(--shadow); }
-.cal-event:active { cursor: grabbing; }
-.cal-event.dragging { opacity: 0.4; }
-.cal-event.is-bug { background: #FAC9CB; }
-.cal-ev-top { display: flex; align-items: flex-start; gap: 9px; }
-.cal-ev-title { flex: 1; border: none; background: transparent; text-align: left; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.35; padding: 0; word-break: break-word; }
-.cal-event.done .cal-ev-title { color: var(--ink-mute); text-decoration: line-through; }
-.cal-ev-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; padding-left: 30px; }
-.tl-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: var(--ink-soft); font-family: var(--mono); }
-.cal-add {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  border: 1.5px dashed rgba(26, 26, 24, 0.18); background: rgba(255, 255, 255, 0.45);
-  color: var(--ink-soft); font-size: 12px; font-weight: 700; padding: 9px; border-radius: 12px; cursor: pointer;
-  transition: background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
-}
-.cal-add:hover { background: var(--surface); color: var(--ink); border-color: transparent; box-shadow: var(--shadow-sm); }
-.cal-add svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+/* Day background = the drop zone for that day (drag highlights it) */
+.cal-h-bg { z-index: 0; border-radius: 12px; transition: box-shadow 120ms var(--ease), background 120ms var(--ease); }
+.cal-h-bg.today { background: rgba(26, 26, 24, 0.03); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.cal-h-bg.past { background: rgba(26, 26, 24, 0.018); }
 
-/* ---------- Calendar (legacy month grid, unused) ---------- */
-.calendar { flex: 1; padding: 10px 28px 48px; }
-.cal-head { display: flex; align-items: center; gap: 14px; padding: 4px 2px 18px; }
-.cal-title { font-family: var(--display); font-weight: 800; font-size: 24px; letter-spacing: -0.03em; min-width: 230px; }
-.cal-nav { display: flex; gap: 6px; }
-.cal-nav .btn { padding: 8px 10px; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
-.cal-dow { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); padding: 0 6px 2px; }
-.cal-cell { background: var(--surface); border-radius: 14px; min-height: 118px; padding: 9px 9px 10px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 5px; }
-.cal-cell.out { background: transparent; box-shadow: none; }
-.cal-cell.today { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
-.cal-date { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink-soft); }
-.cal-cell.out .cal-date { opacity: 0.4; }
-.cal-event {
-  display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-  font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 8px; border: none; cursor: pointer;
-  background: var(--p-bg, #EEEAE0); color: var(--p-ink, var(--ink));
-  transition: transform 110ms var(--ease);
+/* "No date" column stays pinned to the left while the days scroll under it. The frosted
+   panel is one element spanning the whole column (header row included) so it reads as a
+   single continuous column with no seam between the header and the body below it. */
+.cal-h-head.nodate, .cal-h-bg.nodate { position: sticky; left: 0; }
+.cal-h-bg.nodate {
+  z-index: 4;
+  background: rgba(247, 245, 238, 0.1);          /* light, so the blur does the work */
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.1);
+  backdrop-filter: blur(1.5px) saturate(1.1);
+  box-shadow: 1px 0 0 rgba(26, 26, 24, 0.04), 10px 0 18px -12px rgba(26, 26, 24, 0.14);
 }
-.cal-event:hover { transform: translateY(-1px); }
-.cal-event .ev-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-event.done { opacity: 0.55; text-decoration: line-through; }
-.cal-event.is-bug { box-shadow: inset 0 0 0 1.5px var(--danger); }
-.cal-event .ev-bug { width: 6px; height: 6px; border-radius: 9999px; background: var(--danger); flex-shrink: 0; }
-.cal-undated { margin-top: 22px; }
-.cal-undated h3 { font-family: var(--display); font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); margin: 0 0 10px; }
-.cal-undated-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-h-head.nodate { z-index: 7; background: transparent; border-bottom-color: rgba(26, 26, 24, 0.18); }
+.cal-bar.nodate { position: sticky; left: 0; z-index: 6; }
+
+/* Drop handling is coordinate-based (see Timeline.tsx): the scroll container computes the
+   hovered day from the pointer X, so it never depends on which element the drag hit. */
+.cal-h-bg.drop-target { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+
+/* Event bars — single-day fills its column; multi-day spans several */
+.cal-bar {
+  z-index: 1; position: relative; align-self: start; min-height: 88px;
+  display: flex; background: var(--surface); border-radius: 12px;
+  box-shadow: var(--shadow-sm); cursor: grab;
+  transition: box-shadow 140ms var(--ease), opacity 140ms var(--ease), transform 110ms var(--ease);
+}
+.cal-bar:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+.cal-bar:active { cursor: grabbing; }
+.cal-bar.dragging { opacity: 0.4; }
+.cal-bar.is-bug { background: #FAC9CB; }
+.cal-bar.is-bug.done { background: #EFB9BB; }
+.cal-bar.done { background: #FAFBF6; }
+
+.cal-bar-accent { flex: 0 0 4px; background: var(--p-bg, var(--border)); border-radius: 12px 0 0 12px; }
+.cal-bar.is-bug .cal-bar-accent { background: var(--danger); }
+.cal-bar-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px 11px 11px; }
+/* Multi-day bars keep their title + checkbox pinned so they read across the whole span.
+   The content must be narrower than the bar (flex 0 + max-width) to have room to slide. */
+.cal-bar.multi .cal-bar-main {
+  position: sticky; left: var(--stick-left, 0px);
+  flex: 0 1 auto; max-width: calc(var(--day-w) - 6px);
+}
+/* Title + meta stack beside the checkbox; the title wraps freely instead of pushing below it */
+.cal-bar-body { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; gap: 7px; padding-top: 1.5px; }
+.cal-bar-title {
+  width: 100%; border: none; background: transparent; text-align: left; cursor: pointer;
+  font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.35; padding: 1px 0 0;
+  overflow-wrap: anywhere; word-break: break-word;
+  /* keep cards a similar height: at most two lines, ellipsis beyond */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cal-bar.done .cal-bar-title { color: var(--ink-mute); text-decoration: line-through; text-decoration-color: rgba(26,26,24,0.35); }
+.cal-bar-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tl-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: var(--ink-soft); font-family: var(--mono); white-space: nowrap; }
 
 /* ---------- Toast / banner ---------- */
 .toast {
@@ -516,13 +533,29 @@ button { font-family: inherit; }
 .proj-del:hover { background: var(--danger-soft); color: var(--danger); }
 .proj-del svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
+/* Favorite star */
+.proj-fav { position: absolute; top: 12px; right: 46px; border: none; background: transparent; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; color: var(--ink-mute); opacity: 0; transition: opacity 140ms var(--ease), background 140ms var(--ease), color 140ms var(--ease), transform 140ms var(--ease); }
+.proj-card:hover .proj-fav { opacity: 1; }
+.proj-fav.on { opacity: 1; color: #E6B400; right: 12px; }   /* favorites have no delete shown until hover, so star can sit rightmost */
+.proj-card:hover .proj-fav.on { right: 46px; }
+.proj-fav:hover { background: rgba(230, 180, 0, 0.14); color: #E6B400; transform: scale(1.08); }
+.proj-fav svg { width: 17px; height: 17px; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; fill: none; }
+.proj-fav.on svg { fill: #E6B400; }
+
+/* Section headings on the projects home */
+.home-section { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 8px 0 0; padding: 0 28px; }
+.home-section.muted { color: var(--ink-mute); margin-top: 22px; }
+.home-section-ic { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
+
 /* ---------- Auth ---------- */
 .auth-screen { min-height: 100%; display: grid; place-items: center; padding: 40px 20px; }
 .auth-card { width: 100%; max-width: 392px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 40px 38px 44px; }
 .auth-brand { gap: 12px; margin-bottom: 4px; }
 .auth-brand h1 { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; margin: 0; }
-.auth-logo { color: var(--ink); display: block; margin-bottom: 10px; }
-.auth-sub { color: var(--ink-soft); font-size: 13.5px; line-height: 1.55; margin: 6px 0 30px; }
+.auth-logo { color: var(--ink); display: block; margin-bottom: 24px; }
+.auth-sub { color: var(--ink-soft); font-size: 13.5px; line-height: 1.55; margin: 0 0 30px; }
+.auth-sub.tight { margin-bottom: 16px; }
+.auth-alt { align-self: center; width: auto; }
 .auth-form { display: flex; flex-direction: column; gap: 18px; }
 .auth-form form { display: flex; flex-direction: column; gap: 14px; margin: 0; }
 .btn.google { background: var(--surface); box-shadow: var(--shadow-sm); justify-content: center; padding: 11px; font-weight: 700; width: 100%; }

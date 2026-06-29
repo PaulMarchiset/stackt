@@ -14,6 +14,7 @@ export default function CardEditor({
   const [title, setTitle] = useState(card?.title ?? '');
   const [version, setVersion] = useState(card ? card.version : project.active_version || '');
   const [date, setDate] = useState<string>(card?.target_date ?? defaultDate ?? '');
+  const [endDate, setEndDate] = useState<string>(card?.end_date ?? '');
   const [type, setType] = useState<CardType>(card ? card.type : defaultType ?? 'update');
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
@@ -27,7 +28,9 @@ export default function CardEditor({
   function submit() {
     const t = title.trim();
     if (!t) { titleRef.current?.focus(); return; }
-    onSubmit({ title: t, version: version.trim(), target_date: date || null, type });
+    // end_date only makes sense alongside a start, and never before it.
+    const end = date && endDate && endDate > date ? endDate : null;
+    onSubmit({ title: t, version: version.trim(), target_date: date || null, end_date: end, type });
   }
 
   const body = (
@@ -56,8 +59,21 @@ export default function CardEditor({
           <input className="version" placeholder="Type a version, e.g. v1.0.0" value={version}
             onChange={(e) => setVersion(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
-          <input className="date" type="date" value={date} onChange={(e) => setDate(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
+        </div>
+        <div className="ver-label">Schedule</div>
+        <div className="edit-row date-row">
+          <label className="date-field">
+            <span>Start</span>
+            <input className="date" type="date" value={date}
+              onChange={(e) => { const v = e.target.value; setDate(v); if (endDate && (!v || endDate < v)) setEndDate(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
+          </label>
+          <label className="date-field">
+            <span>End <em>(optional)</em></span>
+            <input className="date" type="date" value={endDate} min={date || undefined} disabled={!date}
+              onChange={(e) => setEndDate(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
+          </label>
         </div>
         <div className="edit-actions">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>

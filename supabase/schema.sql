@@ -14,9 +14,13 @@ create table if not exists public.projects (
   versions           text[] not null default '{}',
   completed_versions text[] not null default '{}',
   version_colors     jsonb  not null default '{}'::jsonb,
+  favorite           boolean not null default false,
   position           integer not null default 0,
   created_at         timestamptz not null default now()
 );
+
+-- Backfill columns added after the first deploy (safe to re-run).
+alter table public.projects add column if not exists favorite boolean not null default false;
 
 create index if not exists projects_user_idx on public.projects (user_id, position);
 
@@ -27,13 +31,17 @@ create table if not exists public.cards (
   project_id  uuid not null references public.projects (id) on delete cascade,
   title       text not null default '',
   version     text not null default '',
-  target_date date,
+  target_date date,           -- start day (single-day cards use only this)
+  end_date    date,           -- optional last day for multi-day cards
   status      text not null default 'todo' check (status in ('todo','inprogress','done')),
   done        boolean not null default false,
   type        text not null default 'update' check (type in ('update','bug')),
   position    integer not null default 0,
   created_at  timestamptz not null default now()
 );
+
+-- Backfill columns added after the first deploy (safe to re-run).
+alter table public.cards add column if not exists end_date date;
 
 create index if not exists cards_project_idx on public.cards (project_id, status, position);
 create index if not exists cards_user_idx on public.cards (user_id);

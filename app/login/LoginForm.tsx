@@ -7,7 +7,7 @@ const CODE_LENGTH = 6; // must match Supabase "Email OTP Length"
 
 /** Segmented code input: one box per digit, with auto-advance, backspace and paste. */
 function CodeBoxes({ value, onChange, onComplete }: {
-  value: string; onChange: (v: string) => void; onComplete: () => void;
+  value: string; onChange: (v: string) => void; onComplete: (full: string) => void;
 }) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
   const setAt = (i: number, ch: string) => {
@@ -32,8 +32,8 @@ function CodeBoxes({ value, onChange, onComplete }: {
             if (!d) { onChange(setAt(i, '')); return; }
             const next = setAt(i, d[d.length - 1]);
             onChange(next);
-            if (i < CODE_LENGTH - 1) refs.current[i + 1]?.focus();
-            else if (next.length === CODE_LENGTH) onComplete();
+            if (next.length === CODE_LENGTH) onComplete(next);
+            else if (i < CODE_LENGTH - 1) refs.current[i + 1]?.focus();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Backspace') {
@@ -50,7 +50,7 @@ function CodeBoxes({ value, onChange, onComplete }: {
             onChange(digits);
             const idx = Math.min(digits.length, CODE_LENGTH - 1);
             refs.current[idx]?.focus();
-            if (digits.length === CODE_LENGTH) onComplete();
+            if (digits.length === CODE_LENGTH) onComplete(digits);
           }}
         />
       ))}
@@ -86,14 +86,14 @@ export default function LoginForm() {
     }
   }
 
-  async function verify(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (busy || code.length < CODE_LENGTH) return;
+  async function verify(codeOverride?: string) {
+    const token = (codeOverride ?? code).trim();
+    if (busy || token.length < CODE_LENGTH) return;
     setError('');
     setBusy(true);
     const { error } = await supabase.auth.verifyOtp({
       email: email.trim(),
-      token: code.trim(),
+      token,
       type: 'email'
     });
     setBusy(false);
@@ -116,26 +116,31 @@ export default function LoginForm() {
 
   if (step === 'code') {
     return (
-      <div className="auth-form">
-        <p className="auth-codenote">
-          We sent a {CODE_LENGTH}-digit code to <strong>{email}</strong>.
-        </p>
-        <form onSubmit={verify}>
-          <CodeBoxes value={code} onChange={setCode} onComplete={() => verify()} />
-          <button className="btn solid auth-submit" type="submit" disabled={busy || code.length < CODE_LENGTH}>
-            {busy ? 'Verifying…' : 'Verify & sign in'}
+      <>
+        <p className="auth-sub tight">Plan and track updates across your projects.</p>
+        <div className="auth-form">
+          <p className="auth-codenote">
+            We sent a {CODE_LENGTH}-digit code to <strong>{email}</strong>.
+          </p>
+          <form onSubmit={(e) => { e.preventDefault(); void verify(); }}>
+            <CodeBoxes value={code} onChange={setCode} onComplete={(full) => void verify(full)} />
+            <button className="btn solid auth-submit" type="submit" disabled={busy || code.length < CODE_LENGTH}>
+              {busy ? 'Verifying…' : 'Verify & sign in'}
+            </button>
+          </form>
+          <button className="btn ghost auth-alt" onClick={() => { setStep('email'); setCode(''); setError(''); }}>
+            Use a different email
           </button>
-        </form>
-        <button className="btn ghost" onClick={() => { setStep('email'); setCode(''); setError(''); }}>
-          Use a different email
-        </button>
-        {error && <p className="auth-error">{error}</p>}
-      </div>
+          {error && <p className="auth-error">{error}</p>}
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="auth-form">
+    <>
+      <p className="auth-sub">Plan and track updates across your projects.</p>
+      <div className="auth-form">
       <button className="btn google" onClick={signInWithGoogle}>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <path fill="#4285F4" d="M22.5 12.2c0-.7-.06-1.4-.18-2.06H12v3.9h5.9a5 5 0 0 1-2.18 3.3v2.74h3.52c2.06-1.9 3.26-4.7 3.26-7.88Z" />
@@ -160,6 +165,7 @@ export default function LoginForm() {
         </button>
       </form>
       {error && <p className="auth-error">{error}</p>}
-    </div>
+      </div>
+    </>
   );
 }

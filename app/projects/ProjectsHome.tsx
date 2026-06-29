@@ -38,6 +38,45 @@ export default function ProjectsHome({
     await supabase.from('projects').delete().eq('id', id);
   }
 
+  async function toggleFavorite(id: string, next: boolean) {
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: next } : p)));
+    const { error } = await supabase.from('projects').update({ favorite: next }).eq('id', id);
+    if (error) {
+      console.error('favorite update failed:', error);
+      setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: !next } : p))); // revert
+      alert('Could not update favorite — check your connection.');
+    }
+  }
+
+  const projectCard = (p: Project) => {
+    const { u, b } = counts(p.id);
+    return (
+      <div key={p.id} className="proj-card">
+        <button
+          className={'proj-fav' + (p.favorite ? ' on' : '')}
+          title={p.favorite ? 'Remove from favorites' : 'Add to favorites'}
+          aria-pressed={p.favorite}
+          onClick={() => toggleFavorite(p.id, !p.favorite)}
+        >
+          <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.9 6.75 19.66l1-5.86L3.5 9.66l5.9-.86z" /></svg>
+        </button>
+        <a className="proj-open" href={`/board?p=${p.id}`}>
+          <span className="proj-mark"><span /><span /><span /></span>
+          <h2 className="proj-name">{p.name || 'Untitled'}</h2>
+          <p className="proj-meta">
+            {u} update{u !== 1 ? 's' : ''}{b ? ` · ${b} bug${b !== 1 ? 's' : ''}` : ''}
+          </p>
+        </a>
+        <button className="proj-del" title="Delete project" onClick={() => remove(p.id, p.name)}>
+          <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
+        </button>
+      </div>
+    );
+  };
+
+  const favorites = projects.filter((p) => p.favorite);
+  const others = projects.filter((p) => !p.favorite);
+
   return (
     <div className="home">
       <header className="home-top">
@@ -57,25 +96,24 @@ export default function ProjectsHome({
         </button>
       </div>
 
+      {favorites.length > 0 && (
+        <>
+          <h2 className="home-section">
+            <svg viewBox="0 0 24 24" className="home-section-ic"><path d="M12 3.5l2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.9 6.75 19.66l1-5.86L3.5 9.66l5.9-.86z" /></svg>
+            Favorites
+          </h2>
+          <div className="home-grid">
+            {favorites.map(projectCard)}
+          </div>
+          <h2 className="home-section muted">All projects</h2>
+        </>
+      )}
+
       <div className="home-grid">
-        {projects.map((p) => {
-          const { u, b } = counts(p.id);
-          return (
-            <div key={p.id} className="proj-card">
-              <a className="proj-open" href={`/board?p=${p.id}`}>
-                <span className="proj-mark"><span /><span /><span /></span>
-                <h2 className="proj-name">{p.name || 'Untitled'}</h2>
-                <p className="proj-meta">
-                  {u} update{u !== 1 ? 's' : ''}{b ? ` · ${b} bug${b !== 1 ? 's' : ''}` : ''}
-                </p>
-              </a>
-              <button className="proj-del" title="Delete project" onClick={() => remove(p.id, p.name)}>
-                <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
-              </button>
-            </div>
-          );
-        })}
+        {others.map(projectCard)}
         {projects.length === 0 && <div className="empty-hint">No projects yet — create your first one.</div>}
+        {projects.length > 0 && others.length === 0 && favorites.length > 0 &&
+          <div className="empty-hint">Every project is a favorite.</div>}
       </div>
     </div>
   );

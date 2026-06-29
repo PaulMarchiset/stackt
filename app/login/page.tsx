@@ -9,7 +9,6 @@ export default function LoginPage() {
     <main className="auth-screen">
       <div className="auth-card">
         <Logo height={28} className="auth-logo" />
-        <p className="auth-sub">Plan and track updates across your projects.</p>
         <LoginForm />
       </div>
     </main>

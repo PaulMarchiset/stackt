@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
 import {
-  dateClass, formatDate, isVersionCompleted, projectVersions, sortByDate,
+  dateClass, formatDateRange, isVersionCompleted, projectVersions, sortByDate,
   suggestNextVersion, versionColorIndex
 } from '@/lib/util';
 import CardEditor from './CardEditor';
@@ -66,8 +66,8 @@ export default function BoardApp({
     if (!project) return;
     const row = {
       project_id: project.id, title: values.title ?? '', version: values.version ?? '',
-      target_date: values.target_date ?? null, status, done: status === 'done',
-      type: values.type ?? 'update'
+      target_date: values.target_date ?? null, end_date: values.end_date ?? null,
+      status, done: status === 'done', type: values.type ?? 'update'
     };
     setSaving('saving');
     const { data, error } = await supabase.from('cards').insert(row).select().single();
@@ -236,7 +236,7 @@ export default function BoardApp({
           {card.version && <span className="chip version">{card.version}</span>}
           <span className={'date ' + dcls}>
             <svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></svg>
-            {formatDate(card.target_date)}
+            {formatDateRange(card.target_date, card.end_date)}
             {dcls === 'overdue' && <span className="pill-overdue">overdue</span>}
           </span>
         </div>
@@ -322,7 +322,16 @@ export default function BoardApp({
             const c = cards.find((x) => x.id === id);
             const nd = date || null;
             if (!c || c.target_date === nd) return;
-            patchCard(id, { target_date: nd });
+            // Keep a multi-day card's duration: shift end_date by the same offset.
+            let end = c.end_date;
+            if (nd && c.target_date && c.end_date) {
+              const span = (Date.parse(c.end_date) - Date.parse(c.target_date)) / 86400000;
+              const e = new Date(nd); e.setDate(e.getDate() + span);
+              end = e.toISOString().slice(0, 10);
+            } else if (!nd) {
+              end = null; // moved to "No date" → drop the range too
+            }
+            patchCard(id, { target_date: nd, end_date: end });
           }}
           onSubmit={(vals) => {
             if (editing && editing.startsWith('__new__')) void addCard(vals, 'todo');

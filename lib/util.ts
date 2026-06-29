@@ -41,6 +41,18 @@ export function formatDate(iso: string | null): string {
   return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/* "Mar 3 → Mar 7, 2025" for a multi-day card; falls back to a single date. */
+export function formatDateRange(start: string | null, end: string | null): string {
+  if (!start || !end || end <= start) return formatDate(start);
+  const s = start.split('-').map(Number), e = end.split('-').map(Number);
+  const sd = new Date(s[0], s[1] - 1, s[2]);
+  const ed = new Date(e[0], e[1] - 1, e[2]);
+  const sameYear = s[0] === e[0];
+  const left = sd.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+  const right = ed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${left} → ${right}`;
+}
+
 /* '', 'overdue', 'soon', or 'none' for date pill styling. */
 export function dateClass(card: Card): string {
   if (card.done) return '';
