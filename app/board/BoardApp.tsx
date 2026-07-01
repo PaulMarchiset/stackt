@@ -5,13 +5,18 @@ import { createClient } from '@/lib/supabase/client';
 import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
 import {
   dateClass, formatDateRange, isVersionCompleted, projectVersions, sortByDate,
-  suggestNextVersion, versionColorIndex
+  suggestNextVersion, todayISO, versionColorIndex
 } from '@/lib/util';
+import { useIsMobile } from '@/lib/useIsMobile';
+import Sheet from '@/app/components/Sheet';
 import CardEditor from './CardEditor';
+import Modal from './Modal';
 import Logo from '../Logo';
 import Timeline from './Timeline';
+import Agenda from './Agenda';
 
 type EditTarget = string | null; // card id, or `__new__:status`, or null
+type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: string } | null;
 
 export default function BoardApp({
   initialProjects, initialCards, userEmail, initialActiveId
@@ -19,6 +24,7 @@ export default function BoardApp({
   initialProjects: Project[]; initialCards: Card[]; userEmail: string; initialActiveId?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const isMobile = useIsMobile();
 
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
@@ -36,6 +42,19 @@ export default function BoardApp({
   const [saving, setSaving] = useState<'saved' | 'saving' | 'error'>('saved');
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const toastTimer = useRef<number>(0);
+
+  // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
+  const [sheet, setSheet] = useState<MobileSheet>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [activeCol, setActiveCol] = useState(0);
+  const onBoardScroll = () => {
+    const el = boardRef.current;
+    if (el) setActiveCol(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
+  };
+  const goCol = (i: number) => {
+    const el = boardRef.current;
+    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
+  };
 
   const project = projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
   const projCards = useMemo(
@@ -183,6 +202,39 @@ export default function BoardApp({
     </header>
   );
 
+  // Compact mobile header: brand + project switcher + overflow menu, then a
+  // Board/Timeline toggle row. Desktop keeps renderTopbar() untouched.
+  const renderMobileTopbar = () => (
+    <header className="m-topbar">
+      <div className="m-topbar-row">
+        <a className="brand" href="/projects" title="All projects">
+          <Logo height={20} className="brand-logo-full" />
+        </a>
+        <span className={'save-state ' + (saving === 'saving' ? 'saving' : saving === 'error' ? 'error' : '')}>
+          {saving === 'saving' ? 'saving…' : saving === 'error' ? '!' : ''}
+        </span>
+        <div className="meta-spacer" />
+        <button className="m-proj" onClick={() => setSheet({ kind: 'project' })}>
+          <svg viewBox="0 0 16 16" className="ic"><path d="M4 6l4 4 4-4" /></svg>
+          <span className="m-proj-name">{project?.name || 'Untitled'}</span>
+        </button>
+        <button className="icon-btn m-menu" title="Menu" onClick={() => setSheet({ kind: 'menu' })}>
+          <svg viewBox="0 0 16 16"><circle cx="8" cy="3" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="8" cy="13" r="1.4" /></svg>
+        </button>
+      </div>
+      <div className="m-topbar-row2">
+        <div className="view-toggle">
+          <button className={'view-opt' + (view === 'board' ? ' active' : '')} onClick={() => setView('board')}>
+            <svg viewBox="0 0 16 16"><path d="M2.5 2.5h4v11h-4zM9.5 2.5h4v11h-4z" /></svg> Board
+          </button>
+          <button className={'view-opt' + (view === 'timeline' ? ' active' : '')} onClick={() => setView('timeline')}>
+            <svg viewBox="0 0 16 16"><path d="M4 3.5h9M4 8h9M4 12.5h9" /><circle cx="1.5" cy="3.5" r="1.3" /><circle cx="1.5" cy="8" r="1.3" /><circle cx="1.5" cy="12.5" r="1.3" /></svg> Timeline
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+
   const renderVersionChip = (v: string) => {
     if (!project) return null;
     const count = projCards.filter((c) => c.version === v).length;
@@ -220,13 +272,21 @@ export default function BoardApp({
             <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
           </button>
           <div className="card-title">{card.title || 'Untitled update'}</div>
-          <div className="card-menu">
-            <button className="icon-btn" title="Edit" onClick={() => setEditing(card.id)}>
-              <svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" /></svg>
-            </button>
-            <button className="icon-btn del" title="Delete" onClick={() => deleteCard(card.id)}>
-              <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
-            </button>
+          <div className={'card-menu' + (isMobile ? ' m-visible' : '')}>
+            {isMobile ? (
+              <button className="icon-btn" title="Actions" onClick={() => setSheet({ kind: 'card', id: card.id })}>
+                <svg viewBox="0 0 16 16"><circle cx="8" cy="3" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="8" cy="13" r="1.4" /></svg>
+              </button>
+            ) : (
+              <>
+                <button className="icon-btn" title="Edit" onClick={() => setEditing(card.id)}>
+                  <svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" /></svg>
+                </button>
+                <button className="icon-btn del" title="Delete" onClick={() => deleteCard(card.id)}>
+                  <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div className="card-meta">
@@ -247,7 +307,7 @@ export default function BoardApp({
   if (!project) {
     return (
       <div className="app">
-        {renderTopbar()}
+        {isMobile ? renderMobileTopbar() : renderTopbar()}
         <div className="banner" style={{ marginTop: 20 }}>No projects yet. Use “+ Project” to create one.</div>
       </div>
     );
@@ -261,9 +321,47 @@ export default function BoardApp({
   const inScope = (c: Card) => (!active || c.version === active) && (typeFilter === 'all' || c.type === typeFilter);
   const scopedCards = projCards.filter(inScope);
 
+  // Timeline (desktop) and Agenda (mobile) share the same prop contract.
+  const TimelineView = isMobile ? Agenda : Timeline;
+  const timelineProps = {
+    project, projCards, cards: scopedCards,
+    editing, newCardDate,
+    onAdd: (date: string) => { setNewCardType('update'); setNewCardDate(date); setEditing('__new__:todo'); },
+    onEdit: (id: string) => setEditing(id),
+    onToggle: toggleDone,
+    onMenu: (id: string) => setSheet({ kind: 'card', id }),
+    onReschedule: (id: string, date: string) => {
+      const c = cards.find((x) => x.id === id);
+      const nd = date || null;
+      if (!c || c.target_date === nd) return;
+      // Keep a multi-day card's duration: shift end_date by the same offset.
+      let end = c.end_date;
+      if (nd && c.target_date && c.end_date) {
+        const span = (Date.parse(c.end_date) - Date.parse(c.target_date)) / 86400000;
+        const e = new Date(nd); e.setDate(e.getDate() + span);
+        end = e.toISOString().slice(0, 10);
+      } else if (!nd) {
+        end = null; // moved to "No date" → drop the range too
+      }
+      patchCard(id, { target_date: nd, end_date: end });
+    },
+    onSubmit: (vals: Partial<Card>) => {
+      if (editing && editing.startsWith('__new__')) void addCard(vals, 'todo');
+      else if (editing) patchCard(editing, vals);
+      setEditing(null);
+    },
+    onCancel: () => setEditing(null)
+  };
+
+  // On mobile the board editor is a bottom-sheet Modal (not inline in a snapping column).
+  const mobileEditColumn = isMobile && view === 'board' && editing?.startsWith('__new__:')
+    ? (editing.split(':')[1] as Status) : null;
+  const mobileEditCard = isMobile && view === 'board' && editing && !editing.startsWith('__new__')
+    ? projCards.find((c) => c.id === editing) : null;
+
   return (
     <div className="app">
-      {renderTopbar()}
+      {isMobile ? renderMobileTopbar() : renderTopbar()}
 
       <div className="project-meta">
         <input className="project-name" value={project.name} spellCheck={false}
@@ -312,77 +410,144 @@ export default function BoardApp({
       </div>
 
       {view === 'timeline' ? (
-        <Timeline
-          project={project} projCards={projCards} cards={scopedCards}
-          editing={editing} newCardDate={newCardDate}
-          onAdd={(date) => { setNewCardType('update'); setNewCardDate(date); setEditing('__new__:todo'); }}
-          onEdit={(id) => setEditing(id)}
-          onToggle={toggleDone}
-          onReschedule={(id, date) => {
-            const c = cards.find((x) => x.id === id);
-            const nd = date || null;
-            if (!c || c.target_date === nd) return;
-            // Keep a multi-day card's duration: shift end_date by the same offset.
-            let end = c.end_date;
-            if (nd && c.target_date && c.end_date) {
-              const span = (Date.parse(c.end_date) - Date.parse(c.target_date)) / 86400000;
-              const e = new Date(nd); e.setDate(e.getDate() + span);
-              end = e.toISOString().slice(0, 10);
-            } else if (!nd) {
-              end = null; // moved to "No date" → drop the range too
-            }
-            patchCard(id, { target_date: nd, end_date: end });
-          }}
-          onSubmit={(vals) => {
-            if (editing && editing.startsWith('__new__')) void addCard(vals, 'todo');
-            else if (editing) patchCard(editing, vals);
-            setEditing(null);
-          }}
-          onCancel={() => setEditing(null)}
-        />
+        <TimelineView {...timelineProps} />
       ) : (
-        <main className="board">
-          {COLUMNS.map((col) => {
-            const colCards = sortByDate(scopedCards.filter((c) => c.status === col.key));
-            const addingBug = typeFilter === 'bug';
-            return (
-              <section key={col.key} className="column" data-status={col.key}
-                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drop-target'); }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) e.currentTarget.classList.remove('drop-target'); }}
-                onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drop-target'); const id = e.dataTransfer.getData('text/plain'); if (id) moveCard(id, col.key); }}>
-                <div className="column-head">
-                  <span className="column-title"><span className={'dot ' + col.key} />{col.label}</span>
-                  <span className="column-count">{colCards.length}</span>
-                </div>
-                <div className="cards">
-                  {colCards.map((c, i) =>
-                    editing === c.id
-                      ? <CardEditor key={c.id} project={project} projCards={projCards} card={c} status={c.status}
-                          onCancel={() => setEditing(null)} onSubmit={(vals) => { patchCard(c.id, vals); setEditing(null); }} />
-                      : renderCard(c, i)
-                  )}
-                  {editing === `__new__:${col.key}` && (
-                    <CardEditor key="__new__" project={project} projCards={projCards} status={col.key} defaultType={newCardType} defaultDate={newCardDate}
-                      onCancel={() => setEditing(null)} onSubmit={(vals) => { void addCard(vals, col.key); setEditing(null); }} />
-                  )}
-                  {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
-                </div>
-                <button className={'add-card' + (addingBug ? ' add-bug' : '')}
-                  onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
-                  <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg>
-                  {addingBug ? 'Add bug' : 'Add update'}
+        <>
+          {isMobile && (
+            <div className="board-pager">
+              {COLUMNS.map((col, i) => (
+                <button key={col.key} className={'pager-opt' + (activeCol === i ? ' active' : '')}
+                  data-status={col.key} onClick={() => goCol(i)}>
+                  <span className={'dot ' + col.key} />{col.label}
+                  <span className="pager-count">{scopedCards.filter((c) => c.status === col.key).length}</span>
                 </button>
-              </section>
-            );
-          })}
-        </main>
+              ))}
+            </div>
+          )}
+          <main className="board" ref={boardRef} onScroll={isMobile ? onBoardScroll : undefined}>
+            {COLUMNS.map((col) => {
+              const colCards = sortByDate(scopedCards.filter((c) => c.status === col.key));
+              const addingBug = typeFilter === 'bug';
+              return (
+                <section key={col.key} className="column" data-status={col.key}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drop-target'); }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) e.currentTarget.classList.remove('drop-target'); }}
+                  onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drop-target'); const id = e.dataTransfer.getData('text/plain'); if (id) moveCard(id, col.key); }}>
+                  <div className="column-head">
+                    <span className="column-title"><span className={'dot ' + col.key} />{col.label}</span>
+                    <span className="column-count">{colCards.length}</span>
+                  </div>
+                  <div className="cards">
+                    {colCards.map((c, i) =>
+                      editing === c.id && !isMobile
+                        ? <CardEditor key={c.id} project={project} projCards={projCards} card={c} status={c.status}
+                            onCancel={() => setEditing(null)} onSubmit={(vals) => { patchCard(c.id, vals); setEditing(null); }} />
+                        : renderCard(c, i)
+                    )}
+                    {!isMobile && editing === `__new__:${col.key}` && (
+                      <CardEditor key="__new__" project={project} projCards={projCards} status={col.key} defaultType={newCardType} defaultDate={newCardDate}
+                        onCancel={() => setEditing(null)} onSubmit={(vals) => { void addCard(vals, col.key); setEditing(null); }} />
+                    )}
+                    {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
+                  </div>
+                  <button className={'add-card' + (addingBug ? ' add-bug' : '')}
+                    onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
+                    <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg>
+                    {addingBug ? 'Add bug' : 'Add update'}
+                  </button>
+                </section>
+              );
+            })}
+          </main>
+        </>
       )}
 
-      {colorPop && (
+      {isMobile && view === 'board' && (mobileEditColumn || mobileEditCard) && (
+        <Modal title={mobileEditCard ? 'Edit update' : 'New update'} onClose={() => setEditing(null)}>
+          <CardEditor bare project={project} projCards={projCards}
+            card={mobileEditCard ?? undefined}
+            status={mobileEditCard ? mobileEditCard.status : (mobileEditColumn as Status)}
+            defaultType={newCardType} defaultDate={mobileEditCard ? undefined : newCardDate}
+            onCancel={() => setEditing(null)}
+            onSubmit={(vals) => {
+              if (mobileEditCard) patchCard(mobileEditCard.id, vals);
+              else void addCard(vals, mobileEditColumn as Status);
+              setEditing(null);
+            }} />
+        </Modal>
+      )}
+
+      {sheet?.kind === 'project' && (
+        <Sheet title="Project" onClose={() => setSheet(null)}>
+          <div className="sheet-rename">
+            <label>Rename</label>
+            <input className="auth-input" value={project.name} spellCheck={false}
+              onChange={(e) => setProjects((ps) => ps.map((p) => (p.id === project.id ? { ...p, name: e.target.value } : p)))}
+              onBlur={(e) => patchProject(project.id, { name: e.target.value.trim() || 'Untitled' })} />
+          </div>
+          <div className="sheet-section-label">Switch project</div>
+          <div className="sheet-list">
+            {projects.map((p) => (
+              <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
+                onClick={() => { setActiveId(p.id); setEditing(null); setSheet(null); }}>
+                {p.name || 'Untitled'}
+                <span className="count">{cards.filter((c) => c.project_id === p.id).length}</span>
+              </button>
+            ))}
+          </div>
+          <a className="sheet-item link" href="/projects">All projects →</a>
+        </Sheet>
+      )}
+
+      {sheet?.kind === 'menu' && (
+        <Sheet title="Menu" onClose={() => setSheet(null)}>
+          <a className="sheet-item link" href="/projects">All projects</a>
+          <form action="/auth/signout" method="post">
+            <button className="sheet-item danger" type="submit">Sign out</button>
+          </form>
+        </Sheet>
+      )}
+
+      {sheet?.kind === 'card' && (() => {
+        const c = cards.find((x) => x.id === sheet.id);
+        if (!c) return null;
+        return (
+          <Sheet title={c.title || 'Untitled'} onClose={() => setSheet(null)}>
+            <div className="sheet-section-label">Move to</div>
+            <div className="sheet-moves">
+              {COLUMNS.map((col) => (
+                <button key={col.key} className={'sheet-move' + (c.status === col.key ? ' current' : '')}
+                  data-status={col.key} disabled={c.status === col.key}
+                  onClick={() => { moveCard(c.id, col.key); setSheet(null); }}>
+                  <span className={'dot ' + col.key} />{col.label}
+                  {c.status === col.key && <span className="sheet-check">✓</span>}
+                </button>
+              ))}
+            </div>
+            <button className="sheet-item" onClick={() => { setEditing(c.id); setSheet(null); }}>Edit</button>
+            <button className="sheet-item danger" onClick={() => { deleteCard(c.id); setSheet(null); }}>Delete</button>
+          </Sheet>
+        );
+      })()}
+
+      {colorPop && (isMobile ? (
+        <Sheet title="Version color" onClose={() => setColorPop(null)}>
+          <div className="color-row">
+            {PALETTE.map((cc, i) => (
+              <button key={i} className={'color-opt' + (versionColorIndex(project, colorPop.v) === i ? ' sel' : '')}
+                style={{ background: cc.dot }} title={cc.name} onClick={() => setVersionColor(colorPop.v, i)} />
+            ))}
+          </div>
+          <button className={'sheet-item' + (isVersionCompleted(project, colorPop.v) ? '' : ' done')}
+            onClick={() => toggleCompleted(colorPop.v)}>
+            {isVersionCompleted(project, colorPop.v) ? 'Reopen version' : 'Mark completed'}
+          </button>
+        </Sheet>
+      ) : (
         <ColorPopover x={colorPop.x} y={colorPop.y}
           current={versionColorIndex(project, colorPop.v)} completed={isVersionCompleted(project, colorPop.v)}
           onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)} />
-      )}
+      ))}
 
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
     </div>

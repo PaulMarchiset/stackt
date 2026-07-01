@@ -31,7 +31,8 @@ export function isVersionCompleted(project: Project, v: string): boolean {
 
 export function todayISO(): string {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString().slice(0, 10);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export function formatDate(iso: string | null): string {

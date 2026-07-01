@@ -27,6 +27,7 @@ export default function Timeline({
   onAdd: (date: string) => void;
   onEdit: (id: string) => void;
   onToggle: (id: string) => void;
+  onMenu?: (id: string) => void; // used only by the mobile Agenda; ignored here
   onReschedule: (id: string, date: string) => void;
   onSubmit: (v: Partial<Card>) => void;
   onCancel: () => void;

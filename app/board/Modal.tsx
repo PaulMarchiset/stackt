@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useIsMobile } from '@/lib/useIsMobile';
 
-/** Centered popup that floats above everything and can be dragged by its bar. */
+/**
+ * Desktop: a centered popup that floats above everything and can be dragged by
+ * its bar. Mobile: a bottom sheet that slides up (no drag), driven by CSS.
+ */
 export default function Modal({
   title, onClose, children
 }: {
   title: string; onClose: () => void; children: React.ReactNode;
 }) {
+  const isMobile = useIsMobile();
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [drag, setDrag] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -37,9 +42,11 @@ export default function Modal({
   }
 
   return (
-    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={modalRef} className={'modal' + (pos ? ' moved' : '')} style={pos ? { left: pos.x, top: pos.y } : undefined}>
-        <div className="modal-bar" onMouseDown={onBarDown}>
+    <div className={'modal-overlay' + (isMobile ? ' as-sheet' : '')}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={modalRef} className={'modal' + (pos && !isMobile ? ' moved' : '')}
+        style={pos && !isMobile ? { left: pos.x, top: pos.y } : undefined}>
+        <div className="modal-bar" onMouseDown={isMobile ? undefined : onBarDown}>
           <span className="modal-title">{title}</span>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" /></svg>
