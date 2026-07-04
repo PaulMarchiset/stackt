@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Card, Project } from '@/lib/types';
 import { todayISO, versionColorIndex } from '@/lib/util';
+import BranchChip from '@/app/components/BranchChip';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 
@@ -156,9 +157,13 @@ export default function Timeline({
                 <span className="chip bug"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="11" rx="4" /><path d="M9.5 8a2.5 2.5 0 0 1 5 0M12 11.5v6M8 11.5H5M8 15.5H5.5M16 11.5h3M16 15.5h2.5" /></svg>Bug</span>
               )}
               {c.version && <span className={'chip version' + (ci != null ? ' card-theme-' + ci : '')}>{c.version}</span>}
+              {c.branch && <BranchChip repoUrl={project.repo_url} branch={c.branch} />}
               <span className="tl-status"><span className={'dot ' + c.status} />{STATUS_LABEL[c.status]}</span>
             </div>
           </div>
+          <button className="cal-bar-edit" title="Edit" onClick={() => onEdit(c.id)}>
+            <svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" /></svg>
+          </button>
         </div>
       </div>
     );

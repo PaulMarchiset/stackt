@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Card, CardType, Project, Status } from '@/lib/types';
-import { projectVersions, suggestNextVersion, versionColorIndex } from '@/lib/util';
+import { isVersionCompleted, projectVersions, suggestNextVersion, versionColorIndex } from '@/lib/util';
 
 export default function CardEditor({
   project, projCards, card, status, defaultType, defaultDate, bare, onSubmit, onCancel
@@ -15,6 +15,7 @@ export default function CardEditor({
   const [version, setVersion] = useState(card ? card.version : project.active_version || '');
   const [date, setDate] = useState<string>(card?.target_date ?? defaultDate ?? '');
   const [endDate, setEndDate] = useState<string>(card?.end_date ?? '');
+  const [branch, setBranch] = useState<string>(card?.branch ?? '');
   const [type, setType] = useState<CardType>(card ? card.type : defaultType ?? 'update');
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
@@ -24,13 +25,16 @@ export default function CardEditor({
   }, []);
 
   const vers = projectVersions(project, projCards);
+  // Completed versions aren't offered as choices — but keep the card's current one
+  // visible so an already-assigned (now completed) version doesn't silently vanish.
+  const pickable = vers.filter((v) => !isVersionCompleted(project, v) || v === version.trim());
 
   function submit() {
     const t = title.trim();
     if (!t) { titleRef.current?.focus(); return; }
     // end_date only makes sense alongside a start, and never before it.
     const end = date && endDate && endDate > date ? endDate : null;
-    onSubmit({ title: t, version: version.trim(), target_date: date || null, end_date: end, type });
+    onSubmit({ title: t, version: version.trim(), target_date: date || null, end_date: end, branch: branch.trim(), type });
   }
 
   const body = (
@@ -48,7 +52,7 @@ export default function CardEditor({
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); if (e.key === 'Escape') onCancel(); }} />
         <div className="ver-label">Version</div>
         <div className="ver-quick">
-          {vers.map((v) => (
+          {pickable.map((v) => (
             <button key={v} type="button"
               className={'ver-pick card-theme-' + (versionColorIndex(project, v) ?? 0) + (version.trim() === v ? ' active' : '')}
               onClick={() => setVersion(v)}>{v}</button>
@@ -74,6 +78,12 @@ export default function CardEditor({
               onChange={(e) => setEndDate(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
           </label>
+        </div>
+        <div className="ver-label">Git branch <em>(optional)</em></div>
+        <div className="edit-row">
+          <input className="version branch" placeholder="e.g. feature/login" value={branch} spellCheck={false}
+            onChange={(e) => setBranch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
         </div>
         <div className="edit-actions">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>

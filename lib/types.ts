@@ -11,6 +11,7 @@ export interface Card {
   status: Status;
   done: boolean;
   type: CardType;
+  branch: string; // git branch name (optional; '' when unset)
   position: number;
 }
 
@@ -22,6 +23,7 @@ export interface Project {
   completed_versions: string[];
   version_colors: Record<string, number>;
   favorite: boolean;
+  repo_url: string; // base URL of the git repository (optional; '' when unset)
   position: number;
 }
 

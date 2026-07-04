@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
 import {
-  dateClass, formatDateRange, isVersionCompleted, projectVersions, sortByDate,
+  branchUrl, dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortByDate,
   suggestNextVersion, todayISO, versionColorIndex
 } from '@/lib/util';
 import { useIsMobile } from '@/lib/useIsMobile';
 import Sheet from '@/app/components/Sheet';
+import BranchChip from '@/app/components/BranchChip';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 import Logo from '../Logo';
@@ -45,6 +46,9 @@ export default function BoardApp({
 
   // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
   const [sheet, setSheet] = useState<MobileSheet>(null);
+  // In-app git-repo editor (replaces the native prompt).
+  const [repoEdit, setRepoEdit] = useState(false);
+  const [repoDraft, setRepoDraft] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
   const [activeCol, setActiveCol] = useState(0);
   const onBoardScroll = () => {
@@ -80,13 +84,15 @@ export default function BoardApp({
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
     void persist(supabase.from('projects').update(patch).eq('id', id));
   }
+  function openRepoEdit() { setRepoDraft(project?.repo_url || ''); setRepoEdit(true); }
+  function saveRepo() { if (project) patchProject(project.id, { repo_url: repoDraft.trim() }); setRepoEdit(false); }
   /* ---------- Card ops ---------- */
   async function addCard(values: Partial<Card>, status: Status) {
     if (!project) return;
     const row = {
       project_id: project.id, title: values.title ?? '', version: values.version ?? '',
       target_date: values.target_date ?? null, end_date: values.end_date ?? null,
-      status, done: status === 'done', type: values.type ?? 'update'
+      status, done: status === 'done', type: values.type ?? 'update', branch: values.branch ?? ''
     };
     setSaving('saving');
     const { data, error } = await supabase.from('cards').insert(row).select().single();
@@ -138,6 +144,32 @@ export default function BoardApp({
       version_colors: colors,
       active_version: project.active_version === v ? '' : project.active_version
     });
+  }
+  /* Rename a version everywhere: project metadata + every card carrying the old label. */
+  function renameVersion(oldV: string, raw: string) {
+    if (!project) return;
+    const newV = raw.trim();
+    if (!newV || newV === oldV) return;
+    const uniq = (arr: string[]) => Array.from(new Set(arr));
+    const colors = { ...project.version_colors };
+    if (Object.prototype.hasOwnProperty.call(colors, oldV)) { colors[newV] = colors[oldV]; delete colors[oldV]; }
+    patchProject(project.id, {
+      versions: uniq(project.versions.map((z) => (z === oldV ? newV : z))),
+      completed_versions: uniq(project.completed_versions.map((z) => (z === oldV ? newV : z))),
+      version_colors: colors,
+      active_version: project.active_version === oldV ? newV : project.active_version
+    });
+    setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === oldV ? { ...c, version: newV } : c)));
+    void persist(supabase.from('cards').update({ version: newV }).eq('project_id', project.id).eq('version', oldV));
+    setColorPop(null);
+  }
+  /* Delete a version: drop it from the project and unversion (keep) any cards that used it. */
+  function deleteVersion(v: string) {
+    if (!project) return;
+    removeVersion(v);
+    setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === v ? { ...c, version: '' } : c)));
+    void persist(supabase.from('cards').update({ version: '' }).eq('project_id', project.id).eq('version', v));
+    setColorPop(null);
   }
   function setVersionColor(v: string, idx: number) {
     if (!project) return;
@@ -192,6 +224,7 @@ export default function BoardApp({
             <svg viewBox="0 0 16 16"><path d="M4 3.5h9M4 8h9M4 12.5h9" /><circle cx="1.5" cy="3.5" r="1.3" /><circle cx="1.5" cy="8" r="1.3" /><circle cx="1.5" cy="12.5" r="1.3" /></svg> Timeline
           </button>
         </div>
+        {renderRepoButton()}
         <a className="btn ghost" href="/projects" title="All projects">
           <svg viewBox="0 0 16 16" className="ic"><path d="M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z" /></svg> Projects
         </a>
@@ -231,8 +264,24 @@ export default function BoardApp({
             <svg viewBox="0 0 16 16"><path d="M4 3.5h9M4 8h9M4 12.5h9" /><circle cx="1.5" cy="3.5" r="1.3" /><circle cx="1.5" cy="8" r="1.3" /><circle cx="1.5" cy="12.5" r="1.3" /></svg> Timeline
           </button>
         </div>
+        {renderRepoButton()}
       </div>
     </header>
+  );
+
+  // Git-repo control that lives in the header next to the Board/Timeline toggle.
+  const renderRepoButton = () => project && (
+    <button className={'btn ghost repo-btn' + (project.repo_url ? ' set' : '')} onClick={openRepoEdit}
+      title={project.repo_url ? 'Git repository' : 'Set git repository'}>
+      {project.repo_url ? (
+        <>
+          <svg viewBox="0 0 16 16" className="ic"><circle cx="4" cy="3.5" r="1.5" /><circle cx="4" cy="12.5" r="1.5" /><circle cx="12" cy="4" r="1.5" /><path d="M4 5v6M12 5.5V7a3 3 0 0 1-3 3H4" /></svg>
+          <span className="repo-btn-label">{repoLabel(project.repo_url)}</span>
+        </>
+      ) : (
+        <><svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> Repo</>
+      )}
+    </button>
   );
 
   const renderVersionChip = (v: string) => {
@@ -299,6 +348,7 @@ export default function BoardApp({
             {formatDateRange(card.target_date, card.end_date)}
             {dcls === 'overdue' && <span className="pill-overdue">overdue</span>}
           </span>
+          {card.branch && <BranchChip repoUrl={project.repo_url} branch={card.branch} />}
         </div>
       </article>
     );
@@ -433,28 +483,32 @@ export default function BoardApp({
                   onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('drop-target'); }}
                   onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) e.currentTarget.classList.remove('drop-target'); }}
                   onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('drop-target'); const id = e.dataTransfer.getData('text/plain'); if (id) moveCard(id, col.key); }}>
-                  <div className="column-head">
-                    <span className="column-title"><span className={'dot ' + col.key} />{col.label}</span>
-                    <span className="column-count">{colCards.length}</span>
+                  {/* .column stretches to the tallest column (drop zone); .column-body holds the
+                      visible, content-height colored panel. The gap below stays transparent but droppable. */}
+                  <div className="column-body">
+                    <div className="column-head">
+                      <span className="column-title"><span className={'dot ' + col.key} />{col.label}</span>
+                      <span className="column-count">{colCards.length}</span>
+                    </div>
+                    <div className="cards">
+                      {colCards.map((c, i) =>
+                        editing === c.id && !isMobile
+                          ? <CardEditor key={c.id} project={project} projCards={projCards} card={c} status={c.status}
+                              onCancel={() => setEditing(null)} onSubmit={(vals) => { patchCard(c.id, vals); setEditing(null); }} />
+                          : renderCard(c, i)
+                      )}
+                      {!isMobile && editing === `__new__:${col.key}` && (
+                        <CardEditor key="__new__" project={project} projCards={projCards} status={col.key} defaultType={newCardType} defaultDate={newCardDate}
+                          onCancel={() => setEditing(null)} onSubmit={(vals) => { void addCard(vals, col.key); setEditing(null); }} />
+                      )}
+                      {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
+                    </div>
+                    <button className={'add-card' + (addingBug ? ' add-bug' : '')}
+                      onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
+                      <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg>
+                      {addingBug ? 'Add bug' : 'Add update'}
+                    </button>
                   </div>
-                  <div className="cards">
-                    {colCards.map((c, i) =>
-                      editing === c.id && !isMobile
-                        ? <CardEditor key={c.id} project={project} projCards={projCards} card={c} status={c.status}
-                            onCancel={() => setEditing(null)} onSubmit={(vals) => { patchCard(c.id, vals); setEditing(null); }} />
-                        : renderCard(c, i)
-                    )}
-                    {!isMobile && editing === `__new__:${col.key}` && (
-                      <CardEditor key="__new__" project={project} projCards={projCards} status={col.key} defaultType={newCardType} defaultDate={newCardDate}
-                        onCancel={() => setEditing(null)} onSubmit={(vals) => { void addCard(vals, col.key); setEditing(null); }} />
-                    )}
-                    {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
-                  </div>
-                  <button className={'add-card' + (addingBug ? ' add-bug' : '')}
-                    onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
-                    <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg>
-                    {addingBug ? 'Add bug' : 'Add update'}
-                  </button>
                 </section>
               );
             })}
@@ -474,6 +528,28 @@ export default function BoardApp({
               else void addCard(vals, mobileEditColumn as Status);
               setEditing(null);
             }} />
+        </Modal>
+      )}
+
+      {repoEdit && (
+        <Modal title="Git repository" className="modal-wide modal-center" onClose={() => setRepoEdit(false)}>
+          <div className="repo-form">
+            <label className="repo-form-label">Repository URL</label>
+            <input className="repo-form-input" autoFocus spellCheck={false} inputMode="url"
+              placeholder="https://github.com/org/repo" value={repoDraft}
+              onChange={(e) => setRepoDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveRepo(); if (e.key === 'Escape') setRepoEdit(false); }} />
+            <p className="repo-form-hint">Turns each card&apos;s branch into a clickable link (GitHub, GitLab, Bitbucket).</p>
+            <div className="edit-actions">
+              {project.repo_url && (
+                <a className="btn ghost repo-open" target="_blank" rel="noopener noreferrer"
+                  href={/^https?:\/\//i.test(project.repo_url) ? project.repo_url : 'https://' + project.repo_url}>Open ↗</a>
+              )}
+              <div className="meta-spacer" />
+              <button className="btn ghost" onClick={() => setRepoEdit(false)}>Cancel</button>
+              <button className="btn solid" onClick={saveRepo}>Save</button>
+            </div>
+          </div>
         </Modal>
       )}
 
@@ -531,7 +607,14 @@ export default function BoardApp({
       })()}
 
       {colorPop && (isMobile ? (
-        <Sheet title="Version color" onClose={() => setColorPop(null)}>
+        <Sheet title={colorPop.v} onClose={() => setColorPop(null)}>
+          <div className="sheet-rename">
+            <label>Rename version</label>
+            <input className="auth-input" defaultValue={colorPop.v} spellCheck={false}
+              onBlur={(e) => renameVersion(colorPop.v, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+          </div>
+          <div className="sheet-section-label">Color</div>
           <div className="color-row">
             {PALETTE.map((cc, i) => (
               <button key={i} className={'color-opt' + (versionColorIndex(project, colorPop.v) === i ? ' sel' : '')}
@@ -542,11 +625,13 @@ export default function BoardApp({
             onClick={() => toggleCompleted(colorPop.v)}>
             {isVersionCompleted(project, colorPop.v) ? 'Reopen version' : 'Mark completed'}
           </button>
+          <button className="sheet-item danger" onClick={() => deleteVersion(colorPop.v)}>Delete version</button>
         </Sheet>
       ) : (
-        <ColorPopover x={colorPop.x} y={colorPop.y}
+        <ColorPopover x={colorPop.x} y={colorPop.y} label={colorPop.v}
           current={versionColorIndex(project, colorPop.v)} completed={isVersionCompleted(project, colorPop.v)}
-          onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)} />
+          onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)}
+          onRename={(v) => renameVersion(colorPop.v, v)} onDelete={() => deleteVersion(colorPop.v)} />
       ))}
 
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
@@ -555,13 +640,17 @@ export default function BoardApp({
 }
 
 function ColorPopover({
-  x, y, current, completed, onPick, onToggleComplete
+  x, y, label, current, completed, onPick, onToggleComplete, onRename, onDelete
 }: {
-  x: number; y: number; current: number | null; completed: boolean;
+  x: number; y: number; label: string; current: number | null; completed: boolean;
   onPick: (i: number) => void; onToggleComplete: () => void;
+  onRename: (v: string) => void; onDelete: () => void;
 }) {
   return (
     <div className="color-pop" style={{ top: y, left: x }}>
+      <input className="pop-rename" defaultValue={label} spellCheck={false} aria-label="Version name"
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRename((e.target as HTMLInputElement).value); } }}
+        onBlur={(e) => onRename(e.target.value)} />
       <div className="color-row">
         {PALETTE.map((c, i) => (
           <button key={i} className={'color-opt' + (current === i ? ' sel' : '')}
@@ -573,6 +662,9 @@ function ColorPopover({
         {completed
           ? <><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5l-4.5 4.5 4.5 4.5" /></svg> Reopen version</>
           : <><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg> Mark completed</>}
+      </button>
+      <button className="pop-action danger" onClick={onDelete}>
+        <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg> Delete version
       </button>
     </div>
   );

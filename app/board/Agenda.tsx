@@ -2,6 +2,7 @@
 
 import type { Card, Project } from '@/lib/types';
 import { dateClass, formatDate, formatDateRange, todayISO, versionColorIndex } from '@/lib/util';
+import BranchChip from '@/app/components/BranchChip';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 
@@ -79,6 +80,7 @@ export default function Agenda({
               <span className="chip bug"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="11" rx="4" /><path d="M9.5 8a2.5 2.5 0 0 1 5 0M12 11.5v6M8 11.5H5M8 15.5H5.5M16 11.5h3M16 15.5h2.5" /></svg>Bug</span>
             )}
             {c.version && <span className={'chip version' + (ci != null ? ' card-theme-' + ci : '')}>{c.version}</span>}
+            {c.branch && <BranchChip repoUrl={project.repo_url} branch={c.branch} />}
             {(multi || dcls === 'overdue') && (
               <span className={'date ' + dcls}>
                 <svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></svg>

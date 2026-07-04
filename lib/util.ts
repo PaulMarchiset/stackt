@@ -74,6 +74,32 @@ export function sortByDate(cards: Card[]): Card[] {
   });
 }
 
+/* Build a browsable URL for a card's branch from the project's repo URL.
+   Returns null if either piece is missing. Detects GitHub/GitLab/Bitbucket path styles. */
+export function branchUrl(repoUrl: string, branch: string): string | null {
+  const repo = (repoUrl || '').trim().replace(/\/+$/, '');
+  const b = (branch || '').trim();
+  if (!repo || !b) return null;
+  const base = /^https?:\/\//i.test(repo) ? repo : 'https://' + repo;
+  const path = b.split('/').map(encodeURIComponent).join('/'); // keep slashes in branch names
+  if (/gitlab\./i.test(base)) return `${base}/-/tree/${path}`;
+  if (/bitbucket\./i.test(base)) return `${base}/branch/${path}`;
+  return `${base}/tree/${path}`; // GitHub + most others
+}
+
+/* Short "org/repo" (or hostname) label for a repo URL, for a compact chip. */
+export function repoLabel(repoUrl: string): string {
+  const raw = (repoUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+    const p = u.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+    return p || u.hostname;
+  } catch {
+    return raw;
+  }
+}
+
 /* Bump the patch of the highest vX.Y.Z, else v1.0.0. */
 export function suggestNextVersion(versions: string[]): string {
   const semver = versions

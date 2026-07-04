@@ -17,6 +17,7 @@ export default function ProjectsHome({
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const counts = (id: string) => {
     let u = 0, b = 0;
@@ -38,6 +39,14 @@ export default function ProjectsHome({
     await supabase.from('projects').delete().eq('id', id);
   }
 
+  async function rename(id: string, name: string) {
+    const clean = name.trim() || 'Untitled';
+    setEditingId(null);
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name: clean } : p)));
+    const { error } = await supabase.from('projects').update({ name: clean }).eq('id', id);
+    if (error) { console.error('rename failed:', error); alert('Could not rename — check your connection.'); }
+  }
+
   async function toggleFavorite(id: string, next: boolean) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: next } : p)));
     const { error } = await supabase.from('projects').update({ favorite: next }).eq('id', id);
@@ -50,26 +59,40 @@ export default function ProjectsHome({
 
   const projectCard = (p: Project) => {
     const { u, b } = counts(p.id);
+    const meta = `${u} update${u !== 1 ? 's' : ''}${b ? ` · ${b} bug${b !== 1 ? 's' : ''}` : ''}`;
     return (
       <div key={p.id} className="proj-card">
-        <button
-          className={'proj-fav' + (p.favorite ? ' on' : '')}
-          title={p.favorite ? 'Remove from favorites' : 'Add to favorites'}
-          aria-pressed={p.favorite}
-          onClick={() => toggleFavorite(p.id, !p.favorite)}
-        >
-          <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.9 6.75 19.66l1-5.86L3.5 9.66l5.9-.86z" /></svg>
-        </button>
-        <a className="proj-open" href={`/board?p=${p.id}`}>
-          <span className="proj-mark"><span /><span /><span /></span>
-          <h2 className="proj-name">{p.name || 'Untitled'}</h2>
-          <p className="proj-meta">
-            {u} update{u !== 1 ? 's' : ''}{b ? ` · ${b} bug${b !== 1 ? 's' : ''}` : ''}
-          </p>
-        </a>
-        <button className="proj-del" title="Delete project" onClick={() => remove(p.id, p.name)}>
-          <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
-        </button>
+        <div className="proj-actions">
+          <button
+            className={'proj-fav' + (p.favorite ? ' on' : '')}
+            title={p.favorite ? 'Remove from favorites' : 'Add to favorites'}
+            aria-pressed={p.favorite}
+            onClick={() => toggleFavorite(p.id, !p.favorite)}
+          >
+            <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.9 6.75 19.66l1-5.86L3.5 9.66l5.9-.86z" /></svg>
+          </button>
+          <button className="proj-edit" title="Rename project" onClick={() => setEditingId(p.id)}>
+            <svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" /></svg>
+          </button>
+          <button className="proj-del" title="Delete project" onClick={() => remove(p.id, p.name)}>
+            <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
+          </button>
+        </div>
+        {editingId === p.id ? (
+          <div className="proj-open editing">
+            <span className="proj-mark"><span /><span /><span /></span>
+            <input className="proj-rename" defaultValue={p.name} autoFocus spellCheck={false}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingId(null); }}
+              onBlur={(e) => rename(p.id, e.target.value)} />
+            <p className="proj-meta">{meta}</p>
+          </div>
+        ) : (
+          <a className="proj-open" href={`/board?p=${p.id}`}>
+            <span className="proj-mark"><span /><span /><span /></span>
+            <h2 className="proj-name">{p.name || 'Untitled'}</h2>
+            <p className="proj-meta">{meta}</p>
+          </a>
+        )}
       </div>
     );
   };

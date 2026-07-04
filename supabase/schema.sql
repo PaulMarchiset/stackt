@@ -21,6 +21,7 @@ create table if not exists public.projects (
 
 -- Backfill columns added after the first deploy (safe to re-run).
 alter table public.projects add column if not exists favorite boolean not null default false;
+alter table public.projects add column if not exists repo_url text not null default '';
 
 create index if not exists projects_user_idx on public.projects (user_id, position);
 
@@ -42,6 +43,7 @@ create table if not exists public.cards (
 
 -- Backfill columns added after the first deploy (safe to re-run).
 alter table public.cards add column if not exists end_date date;
+alter table public.cards add column if not exists branch text not null default '';
 
 create index if not exists cards_project_idx on public.cards (project_id, status, position);
 create index if not exists cards_user_idx on public.cards (user_id);

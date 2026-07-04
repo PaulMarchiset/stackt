@@ -8,9 +8,9 @@ import { useIsMobile } from '@/lib/useIsMobile';
  * its bar. Mobile: a bottom sheet that slides up (no drag), driven by CSS.
  */
 export default function Modal({
-  title, onClose, children
+  title, onClose, children, className
 }: {
-  title: string; onClose: () => void; children: React.ReactNode;
+  title: string; onClose: () => void; children: React.ReactNode; className?: string;
 }) {
   const isMobile = useIsMobile();
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -44,7 +44,7 @@ export default function Modal({
   return (
     <div className={'modal-overlay' + (isMobile ? ' as-sheet' : '')}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={modalRef} className={'modal' + (pos && !isMobile ? ' moved' : '')}
+      <div ref={modalRef} className={'modal' + (pos && !isMobile ? ' moved' : '') + (className ? ' ' + className : '')}
         style={pos && !isMobile ? { left: pos.x, top: pos.y } : undefined}>
         <div className="modal-bar" onMouseDown={isMobile ? undefined : onBarDown}>
           <span className="modal-title">{title}</span>
