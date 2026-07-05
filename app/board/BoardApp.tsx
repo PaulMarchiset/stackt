@@ -46,9 +46,11 @@ export default function BoardApp({
 
   // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
   const [sheet, setSheet] = useState<MobileSheet>(null);
-  // In-app git-repo editor (replaces the native prompt).
+  // In-app dialogs (replace native prompt/confirm).
   const [repoEdit, setRepoEdit] = useState(false);
   const [repoDraft, setRepoDraft] = useState('');
+  const [addVerOpen, setAddVerOpen] = useState(false);
+  const [verDraft, setVerDraft] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
   const [activeCol, setActiveCol] = useState(0);
   const onBoardScroll = () => {
@@ -125,13 +127,18 @@ export default function BoardApp({
 
   /* ---------- Version ops ---------- */
   function setActiveVersion(v: string) { if (project) { setEditing(null); patchProject(project.id, { active_version: v }); } }
-  function addVersion() {
+  function openAddVersion() {
     if (!project) return;
-    const guess = suggestNextVersion(projectVersions(project, projCards));
-    const label = (prompt('New version label', guess) || '').trim();
+    setVerDraft(suggestNextVersion(projectVersions(project, projCards)));
+    setAddVerOpen(true);
+  }
+  function confirmAddVersion() {
+    if (!project) return;
+    const label = verDraft.trim();
     if (!label) return;
     const versions = project.versions.includes(label) ? project.versions : [...project.versions, label];
     patchProject(project.id, { versions, active_version: label });
+    setAddVerOpen(false);
     setEditing(null);
   }
   function removeVersion(v: string) {
@@ -218,15 +225,15 @@ export default function BoardApp({
       <div className="topbar-actions">
         <div className="view-toggle">
           <button className={'view-opt' + (view === 'board' ? ' active' : '')} onClick={() => setView('board')}>
-            <svg viewBox="0 0 16 16"><path d="M2.5 2.5h4v11h-4zM9.5 2.5h4v11h-4z" /></svg> Board
+            <svg viewBox="0 0 24 24"><path d="M10 18V6C10 5.06812 10 4.60218 9.84776 4.23463C9.64477 3.74458 9.25542 3.35523 8.76537 3.15224C8.39782 3 7.93188 3 7 3C6.06812 3 5.60218 3 5.23463 3.15224C4.74458 3.35523 4.35523 3.74458 4.15224 4.23463C4 4.60218 4 5.06812 4 6V18C4 18.9319 4 19.3978 4.15224 19.7654C4.35523 20.2554 4.74458 20.6448 5.23463 20.8478C5.60218 21 6.06812 21 7 21C7.93188 21 8.39782 21 8.76537 20.8478C9.25542 20.6448 9.64477 20.2554 9.84776 19.7654C10 19.3978 10 18.9319 10 18Z" /><path d="M20 14V6C20 5.06812 20 4.60218 19.8478 4.23463C19.6448 3.74458 19.2554 3.35523 18.7654 3.15224C18.3978 3 17.9319 3 17 3C16.0681 3 15.6022 3 15.2346 3.15224C14.7446 3.35523 14.3552 3.74458 14.1522 4.23463C14 4.60218 14 5.06812 14 6V14C14 14.9319 14 15.3978 14.1522 15.7654C14.3552 16.2554 14.7446 16.6448 15.2346 16.8478C15.6022 17 16.0681 17 17 17C17.9319 17 18.3978 17 18.7654 16.8478C19.2554 16.6448 19.6448 16.2554 19.8478 15.7654C20 15.3978 20 14.9319 20 14Z" /></svg> Board
           </button>
           <button className={'view-opt' + (view === 'timeline' ? ' active' : '')} onClick={() => setView('timeline')}>
-            <svg viewBox="0 0 16 16"><path d="M4 3.5h9M4 8h9M4 12.5h9" /><circle cx="1.5" cy="3.5" r="1.3" /><circle cx="1.5" cy="8" r="1.3" /><circle cx="1.5" cy="12.5" r="1.3" /></svg> Timeline
+            <svg viewBox="0 0 24 24"><path d="M14 14C14.9319 14 15.3978 14 15.7654 14.1522C16.2554 14.3552 16.6448 14.7446 16.8478 15.2346C17 15.6022 17 16.0681 17 17C17 17.9319 17 18.3978 16.8478 18.7654C16.6448 19.2554 16.2554 19.6448 15.7654 19.8478C15.3978 20 14.9319 20 14 20L6 20C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 18.7654C3 18.3978 3 17.9319 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14L14 14Z" /><path d="M18 4C18.9319 4 19.3978 4 19.7654 4.15224C20.2554 4.35523 20.6448 4.74458 20.8478 5.23463C21 5.60218 21 6.06812 21 7C21 7.93188 21 8.39783 20.8478 8.76537C20.6448 9.25542 20.2554 9.64477 19.7654 9.84776C19.3978 10 18.9319 10 18 10H6C5.06812 10 4.60218 10 4.23463 9.84776C3.74458 9.64477 3.35523 9.25542 3.15224 8.76537C3 8.39783 3 7.93188 3 7C3 6.06812 3 5.60218 3.15224 5.23464C3.35523 4.74458 3.74458 4.35523 4.23463 4.15224C4.60218 4 5.06812 4 6 4L18 4Z" /></svg> Timeline
           </button>
         </div>
         {renderRepoButton()}
         <a className="btn ghost" href="/projects" title="All projects">
-          <svg viewBox="0 0 16 16" className="ic"><path d="M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z" /></svg> Projects
+          <svg viewBox="0 0 24 24" className="ic"><path d="M8.4 3H4.6C4.03995 3 3.75992 3 3.54601 3.10899C3.35785 3.20487 3.20487 3.35785 3.10899 3.54601C3 3.75992 3 4.03995 3 4.6V8.4C3 8.96005 3 9.24008 3.10899 9.45399C3.20487 9.64215 3.35785 9.79513 3.54601 9.89101C3.75992 10 4.03995 10 4.6 10H8.4C8.96005 10 9.24008 10 9.45399 9.89101C9.64215 9.79513 9.79513 9.64215 9.89101 9.45399C10 9.24008 10 8.96005 10 8.4V4.6C10 4.03995 10 3.75992 9.89101 3.54601C9.79513 3.35785 9.64215 3.20487 9.45399 3.10899C9.24008 3 8.96005 3 8.4 3Z" /><path d="M19.4 3H15.6C15.0399 3 14.7599 3 14.546 3.10899C14.3578 3.20487 14.2049 3.35785 14.109 3.54601C14 3.75992 14 4.03995 14 4.6V8.4C14 8.96005 14 9.24008 14.109 9.45399C14.2049 9.64215 14.3578 9.79513 14.546 9.89101C14.7599 10 15.0399 10 15.6 10H19.4C19.9601 10 20.2401 10 20.454 9.89101C20.6422 9.79513 20.7951 9.64215 20.891 9.45399C21 9.24008 21 8.96005 21 8.4V4.6C21 4.03995 21 3.75992 20.891 3.54601C20.7951 3.35785 20.6422 3.20487 20.454 3.10899C20.2401 3 19.9601 3 19.4 3Z" /><path d="M19.4 14H15.6C15.0399 14 14.7599 14 14.546 14.109C14.3578 14.2049 14.2049 14.3578 14.109 14.546C14 14.7599 14 15.0399 14 15.6V19.4C14 19.9601 14 20.2401 14.109 20.454C14.2049 20.6422 14.3578 20.7951 14.546 20.891C14.7599 21 15.0399 21 15.6 21H19.4C19.9601 21 20.2401 21 20.454 20.891C20.6422 20.7951 20.7951 20.6422 20.891 20.454C21 20.2401 21 19.9601 21 19.4V15.6C21 15.0399 21 14.7599 20.891 14.546C20.7951 14.3578 20.6422 14.2049 20.454 14.109C20.2401 14 19.9601 14 19.4 14Z" /><path d="M8.4 14H4.6C4.03995 14 3.75992 14 3.54601 14.109C3.35785 14.2049 3.20487 14.3578 3.10899 14.546C3 14.7599 3 15.0399 3 15.6V19.4C3 19.9601 3 20.2401 3.10899 20.454C3.20487 20.6422 3.35785 20.7951 3.54601 20.891C3.75992 21 4.03995 21 4.6 21H8.4C8.96005 21 9.24008 21 9.45399 20.891C9.64215 20.7951 9.79513 20.6422 9.89101 20.454C10 20.2401 10 19.9601 10 19.4V15.6C10 15.0399 10 14.7599 9.89101 14.546C9.79513 14.3578 9.64215 14.2049 9.45399 14.109C9.24008 14 8.96005 14 8.4 14Z" /></svg> Projects
         </a>
         <form action="/auth/signout" method="post">
           <button className="btn signout" type="submit">Sign out</button>
@@ -252,16 +259,16 @@ export default function BoardApp({
           <span className="m-proj-name">{project?.name || 'Untitled'}</span>
         </button>
         <button className="icon-btn m-menu" title="Menu" onClick={() => setSheet({ kind: 'menu' })}>
-          <svg viewBox="0 0 16 16"><circle cx="8" cy="3" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="8" cy="13" r="1.4" /></svg>
+          <svg viewBox="0 0 24 24"><path d="M12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z" /><path d="M12 6C12.5523 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4C11.4477 4 11 4.44772 11 5C11 5.55228 11.4477 6 12 6Z" /><path d="M12 20C12.5523 20 13 19.5523 13 19C13 18.4477 12.5523 18 12 18C11.4477 18 11 18.4477 11 19C11 19.5523 11.4477 20 12 20Z" /></svg>
         </button>
       </div>
       <div className="m-topbar-row2">
         <div className="view-toggle">
           <button className={'view-opt' + (view === 'board' ? ' active' : '')} onClick={() => setView('board')}>
-            <svg viewBox="0 0 16 16"><path d="M2.5 2.5h4v11h-4zM9.5 2.5h4v11h-4z" /></svg> Board
+            <svg viewBox="0 0 24 24"><path d="M10 18V6C10 5.06812 10 4.60218 9.84776 4.23463C9.64477 3.74458 9.25542 3.35523 8.76537 3.15224C8.39782 3 7.93188 3 7 3C6.06812 3 5.60218 3 5.23463 3.15224C4.74458 3.35523 4.35523 3.74458 4.15224 4.23463C4 4.60218 4 5.06812 4 6V18C4 18.9319 4 19.3978 4.15224 19.7654C4.35523 20.2554 4.74458 20.6448 5.23463 20.8478C5.60218 21 6.06812 21 7 21C7.93188 21 8.39782 21 8.76537 20.8478C9.25542 20.6448 9.64477 20.2554 9.84776 19.7654C10 19.3978 10 18.9319 10 18Z" /><path d="M20 14V6C20 5.06812 20 4.60218 19.8478 4.23463C19.6448 3.74458 19.2554 3.35523 18.7654 3.15224C18.3978 3 17.9319 3 17 3C16.0681 3 15.6022 3 15.2346 3.15224C14.7446 3.35523 14.3552 3.74458 14.1522 4.23463C14 4.60218 14 5.06812 14 6V14C14 14.9319 14 15.3978 14.1522 15.7654C14.3552 16.2554 14.7446 16.6448 15.2346 16.8478C15.6022 17 16.0681 17 17 17C17.9319 17 18.3978 17 18.7654 16.8478C19.2554 16.6448 19.6448 16.2554 19.8478 15.7654C20 15.3978 20 14.9319 20 14Z" /></svg> Board
           </button>
           <button className={'view-opt' + (view === 'timeline' ? ' active' : '')} onClick={() => setView('timeline')}>
-            <svg viewBox="0 0 16 16"><path d="M4 3.5h9M4 8h9M4 12.5h9" /><circle cx="1.5" cy="3.5" r="1.3" /><circle cx="1.5" cy="8" r="1.3" /><circle cx="1.5" cy="12.5" r="1.3" /></svg> Timeline
+            <svg viewBox="0 0 24 24"><path d="M14 14C14.9319 14 15.3978 14 15.7654 14.1522C16.2554 14.3552 16.6448 14.7446 16.8478 15.2346C17 15.6022 17 16.0681 17 17C17 17.9319 17 18.3978 16.8478 18.7654C16.6448 19.2554 16.2554 19.6448 15.7654 19.8478C15.3978 20 14.9319 20 14 20L6 20C5.06812 20 4.60218 20 4.23463 19.8478C3.74458 19.6448 3.35523 19.2554 3.15224 18.7654C3 18.3978 3 17.9319 3 17C3 16.0681 3 15.6022 3.15224 15.2346C3.35523 14.7446 3.74458 14.3552 4.23463 14.1522C4.60218 14 5.06812 14 6 14L14 14Z" /><path d="M18 4C18.9319 4 19.3978 4 19.7654 4.15224C20.2554 4.35523 20.6448 4.74458 20.8478 5.23463C21 5.60218 21 6.06812 21 7C21 7.93188 21 8.39783 20.8478 8.76537C20.6448 9.25542 20.2554 9.64477 19.7654 9.84776C19.3978 10 18.9319 10 18 10H6C5.06812 10 4.60218 10 4.23463 9.84776C3.74458 9.64477 3.35523 9.25542 3.15224 8.76537C3 8.39783 3 7.93188 3 7C3 6.06812 3 5.60218 3.15224 5.23464C3.35523 4.74458 3.74458 4.35523 4.23463 4.15224C4.60218 4 5.06812 4 6 4L18 4Z" /></svg> Timeline
           </button>
         </div>
         {renderRepoButton()}
@@ -291,14 +298,19 @@ export default function BoardApp({
     const ci = versionColorIndex(project, v) ?? 0;
     const active = project.active_version || '';
     return (
-      <button key={v} className={'vchip' + (v === active ? ' active' : '') + (completed ? ' completed' : '')}
+      <button key={v} className={'vchip vchip-ver card-theme-' + ci + (v === active ? ' active' : '') + (completed ? ' completed' : '')}
         onClick={() => setActiveVersion(v)}>
         {completed && <span className="vcheck"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg></span>}
-        <span className="vswatch" style={{ background: PALETTE[ci].dot }} title="Color & options"
-          onClick={(e) => { e.stopPropagation(); const r = (e.target as HTMLElement).getBoundingClientRect(); setColorPop({ v, x: r.left + window.scrollX, y: r.bottom + 8 + window.scrollY }); }} />
         <span className="vlabel">{v}</span>
         <span className="vcount">{count}</span>
-        {count === 0 && <span className="vremove" title="Remove version" onClick={(e) => { e.stopPropagation(); removeVersion(v); }}>×</span>}
+        <span className="vopts" title="Color & options"
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setColorPop({ v, x: Math.max(12, r.right + window.scrollX - 176), y: r.bottom + 8 + window.scrollY });
+          }}>
+          <svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
+        </span>
       </button>
     );
   };
@@ -324,15 +336,15 @@ export default function BoardApp({
           <div className={'card-menu' + (isMobile ? ' m-visible' : '')}>
             {isMobile ? (
               <button className="icon-btn" title="Actions" onClick={() => setSheet({ kind: 'card', id: card.id })}>
-                <svg viewBox="0 0 16 16"><circle cx="8" cy="3" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="8" cy="13" r="1.4" /></svg>
+                <svg viewBox="0 0 24 24"><path d="M12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z" /><path d="M12 6C12.5523 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4C11.4477 4 11 4.44772 11 5C11 5.55228 11.4477 6 12 6Z" /><path d="M12 20C12.5523 20 13 19.5523 13 19C13 18.4477 12.5523 18 12 18C11.4477 18 11 18.4477 11 19C11 19.5523 11.4477 20 12 20Z" /></svg>
               </button>
             ) : (
               <>
                 <button className="icon-btn" title="Edit" onClick={() => setEditing(card.id)}>
-                  <svg viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z" /></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 20H21M3.00003 20H4.67457C5.16376 20 5.40835 20 5.63852 19.9447C5.84259 19.8957 6.03768 19.8149 6.21663 19.7053C6.41846 19.5816 6.59141 19.4086 6.93732 19.0627L19.5001 6.49998C20.3285 5.67156 20.3285 4.32841 19.5001 3.49998C18.6716 2.67156 17.3285 2.67156 16.5001 3.49998L3.93729 16.0627C3.59139 16.4086 3.41843 16.5816 3.29475 16.7834C3.18509 16.9624 3.10428 17.1574 3.05529 17.3615C3.00003 17.5917 3.00003 17.8363 3.00003 18.3255V20Z" /></svg>
                 </button>
                 <button className="icon-btn del" title="Delete" onClick={() => deleteCard(card.id)}>
-                  <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg>
+                  <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg>
                 </button>
               </>
             )}
@@ -340,11 +352,11 @@ export default function BoardApp({
         </div>
         <div className="card-meta">
           {card.type === 'bug' && (
-            <span className="chip bug"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="11" rx="4" /><path d="M9.5 8a2.5 2.5 0 0 1 5 0M12 11.5v6M8 11.5H5M8 15.5H5.5M16 11.5h3M16 15.5h2.5" /></svg>Bug</span>
+            <span className="chip bug"><svg viewBox="0 0 24 24"><path d="M12 20V11M12 20C13.5913 20 15.1174 19.3679 16.2426 18.2426C17.3679 17.1174 18 15.5913 18 14V11C18 9.93913 17.5786 8.92172 16.8284 8.17157C16.0783 7.42143 15.0609 7 14 7H10C8.93913 7 7.92172 7.42143 7.17157 8.17157C6.42143 8.92172 6 9.93913 6 11V14C6 15.5913 6.63214 17.1174 7.75736 18.2426C8.88258 19.3679 10.4087 20 12 20ZM14.1201 3.88L16.0001 2M20.9999 21C21.0011 19.9712 20.6059 18.9816 19.8963 18.2367C19.1868 17.4918 18.2175 17.0489 17.1899 17M21 5C20.9988 5.98215 20.6364 6.92956 19.9817 7.66169C19.327 8.39383 18.4259 8.85951 17.45 8.97M22 13H18M3 21C2.99884 19.9712 3.39409 18.9816 4.10362 18.2367C4.81315 17.4918 5.78241 17.0489 6.81 17M3 5C3.00113 5.98215 3.36357 6.92956 4.01825 7.66169C4.67293 8.39383 5.57408 8.85951 6.55 8.97M6 13H2M8 2L9.88 3.88M9 7.13V6C9 5.20435 9.31607 4.44129 9.87868 3.87868C10.4413 3.31607 11.2044 3 12 3C12.7956 3 13.5587 3.31607 14.1213 3.87868C14.6839 4.44129 15 5.20435 15 6V7.13" /></svg>Bug</span>
           )}
           {card.version && <span className="chip version">{card.version}</span>}
           <span className={'date ' + dcls}>
-            <svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></svg>
+            <svg viewBox="0 0 24 24"><path d="M21 10H3M16 2V6M8 2V6M7.8 22H16.2C17.8802 22 18.7202 22 19.362 21.673C19.9265 21.3854 20.3854 20.9265 20.673 20.362C21 19.7202 21 18.8802 21 17.2V8.8C21 7.11984 21 6.27976 20.673 5.63803C20.3854 5.07354 19.9265 4.6146 19.362 4.32698C18.7202 4 17.8802 4 16.2 4H7.8C6.11984 4 5.27976 4 4.63803 4.32698C4.07354 4.6146 3.6146 5.07354 3.32698 5.63803C3 6.27976 3 7.11984 3 8.8V17.2C3 18.8802 3 19.7202 3.32698 20.362C3.6146 20.9265 4.07354 21.3854 4.63803 21.673C5.27976 22 6.11984 22 7.8 22Z" /></svg>
             {formatDateRange(card.target_date, card.end_date)}
             {dcls === 'overdue' && <span className="pill-overdue">overdue</span>}
           </span>
@@ -447,7 +459,7 @@ export default function BoardApp({
           </>
         ))}
 
-        <button className="vchip add" onClick={addVersion}>
+        <button className="vchip add" onClick={openAddVersion}>
           <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> Version
         </button>
 
@@ -533,13 +545,13 @@ export default function BoardApp({
 
       {repoEdit && (
         <Modal title="Git repository" className="modal-wide modal-center" onClose={() => setRepoEdit(false)}>
-          <div className="repo-form">
-            <label className="repo-form-label">Repository URL</label>
-            <input className="repo-form-input" autoFocus spellCheck={false} inputMode="url"
+          <div className="modal-form">
+            <label className="modal-form-label">Repository URL</label>
+            <input className="modal-form-input" autoFocus spellCheck={false} inputMode="url"
               placeholder="https://github.com/org/repo" value={repoDraft}
               onChange={(e) => setRepoDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveRepo(); if (e.key === 'Escape') setRepoEdit(false); }} />
-            <p className="repo-form-hint">Turns each card&apos;s branch into a clickable link (GitHub, GitLab, Bitbucket).</p>
+            <p className="modal-form-hint">Turns each card&apos;s branch into a clickable link (GitHub, GitLab, Bitbucket).</p>
             <div className="edit-actions">
               {project.repo_url && (
                 <a className="btn ghost repo-open" target="_blank" rel="noopener noreferrer"
@@ -548,6 +560,23 @@ export default function BoardApp({
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setRepoEdit(false)}>Cancel</button>
               <button className="btn solid" onClick={saveRepo}>Save</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {addVerOpen && (
+        <Modal title="New version" className="modal-center" onClose={() => setAddVerOpen(false)}>
+          <div className="modal-form">
+            <label className="modal-form-label">Version label</label>
+            <input className="modal-form-input" autoFocus spellCheck={false} placeholder="e.g. v1.2.0"
+              value={verDraft} onChange={(e) => setVerDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmAddVersion(); if (e.key === 'Escape') setAddVerOpen(false); }} />
+            <p className="modal-form-hint">Groups updates &amp; bugs under a release. You can rename or recolor it later.</p>
+            <div className="edit-actions">
+              <div className="meta-spacer" />
+              <button className="btn ghost" onClick={() => setAddVerOpen(false)}>Cancel</button>
+              <button className="btn solid" onClick={confirmAddVersion}>Add</button>
             </div>
           </div>
         </Modal>
@@ -664,7 +693,7 @@ function ColorPopover({
           : <><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg> Mark completed</>}
       </button>
       <button className="pop-action danger" onClick={onDelete}>
-        <svg viewBox="0 0 16 16"><path d="M3.5 4.5h9M6.5 4V3h3v1M5 4.5l.5 8h5l.5-8" /></svg> Delete version
+        <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg> Delete version
       </button>
     </div>
   );
