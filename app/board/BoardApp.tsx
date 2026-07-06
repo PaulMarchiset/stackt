@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
 import {
-  branchUrl, dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortByDate,
-  suggestNextVersion, todayISO, versionColorIndex
+  dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortByDate,
+  suggestNextVersion, versionColorIndex
 } from '@/lib/util';
 import { useIsMobile } from '@/lib/useIsMobile';
 import Sheet from '@/app/components/Sheet';
@@ -51,6 +51,8 @@ export default function BoardApp({
   const [repoDraft, setRepoDraft] = useState('');
   const [addVerOpen, setAddVerOpen] = useState(false);
   const [verDraft, setVerDraft] = useState('');
+  const [mergeConfirm, setMergeConfirm] = useState<{ from: string; to: string } | null>(null);
+  const [delVerConfirm, setDelVerConfirm] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const [activeCol, setActiveCol] = useState(0);
   const onBoardScroll = () => {
@@ -152,14 +154,20 @@ export default function BoardApp({
       active_version: project.active_version === v ? '' : project.active_version
     });
   }
-  /* Rename a version everywhere: project metadata + every card carrying the old label. */
+  /* Rename a version everywhere: project metadata + every card carrying the old label.
+     If newV already exists this becomes a MERGE (cards move onto it, oldV disappears). */
   function renameVersion(oldV: string, raw: string) {
     if (!project) return;
     const newV = raw.trim();
     if (!newV || newV === oldV) return;
     const uniq = (arr: string[]) => Array.from(new Set(arr));
     const colors = { ...project.version_colors };
-    if (Object.prototype.hasOwnProperty.call(colors, oldV)) { colors[newV] = colors[oldV]; delete colors[oldV]; }
+    const hasOld = Object.prototype.hasOwnProperty.call(colors, oldV);
+    const hasNew = Object.prototype.hasOwnProperty.call(colors, newV);
+    if (hasOld) {
+      if (!hasNew) colors[newV] = colors[oldV]; // rename carries the color; merge keeps the target's
+      delete colors[oldV];
+    }
     patchProject(project.id, {
       versions: uniq(project.versions.map((z) => (z === oldV ? newV : z))),
       completed_versions: uniq(project.completed_versions.map((z) => (z === oldV ? newV : z))),
@@ -582,6 +590,37 @@ export default function BoardApp({
         </Modal>
       )}
 
+      {mergeConfirm && (
+        <Modal title="Merge versions" className="modal-center" onClose={() => setMergeConfirm(null)}>
+          <div className="modal-form">
+            <p className="modal-form-hint">
+              Move every card from <strong>“{mergeConfirm.from}”</strong> into <strong>“{mergeConfirm.to}”</strong>,
+              then delete <strong>“{mergeConfirm.from}”</strong>. This can&apos;t be undone.
+            </p>
+            <div className="edit-actions">
+              <div className="meta-spacer" />
+              <button className="btn ghost" onClick={() => setMergeConfirm(null)}>Cancel</button>
+              <button className="btn solid" onClick={() => { renameVersion(mergeConfirm.from, mergeConfirm.to); setMergeConfirm(null); }}>Merge</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {delVerConfirm && (
+        <Modal title="Delete version" className="modal-center" onClose={() => setDelVerConfirm(null)}>
+          <div className="modal-form">
+            <p className="modal-form-hint">
+              Delete <strong>“{delVerConfirm}”</strong>? Its cards are kept but lose this version label. This can&apos;t be undone.
+            </p>
+            <div className="edit-actions">
+              <div className="meta-spacer" />
+              <button className="btn ghost" onClick={() => setDelVerConfirm(null)}>Cancel</button>
+              <button className="btn danger-solid" onClick={() => { deleteVersion(delVerConfirm); setDelVerConfirm(null); }}>Delete</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {sheet?.kind === 'project' && (
         <Sheet title="Project" onClose={() => setSheet(null)}>
           <div className="sheet-rename">
@@ -654,13 +693,23 @@ export default function BoardApp({
             onClick={() => toggleCompleted(colorPop.v)}>
             {isVersionCompleted(project, colorPop.v) ? 'Reopen version' : 'Mark completed'}
           </button>
-          <button className="sheet-item danger" onClick={() => deleteVersion(colorPop.v)}>Delete version</button>
+          {projectVersions(project, projCards).filter((x) => x !== colorPop.v).length > 0 && (
+            <>
+              <div className="sheet-section-label">Merge into</div>
+              <MergeSelect versions={projectVersions(project, projCards).filter((x) => x !== colorPop.v)}
+                onPick={(v) => { setMergeConfirm({ from: colorPop.v, to: v }); setColorPop(null); }} />
+            </>
+          )}
+          <button className="sheet-item danger" onClick={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }}>Delete version</button>
         </Sheet>
       ) : (
         <ColorPopover x={colorPop.x} y={colorPop.y} label={colorPop.v}
           current={versionColorIndex(project, colorPop.v)} completed={isVersionCompleted(project, colorPop.v)}
+          others={projectVersions(project, projCards).filter((x) => x !== colorPop.v)}
           onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)}
-          onRename={(v) => renameVersion(colorPop.v, v)} onDelete={() => deleteVersion(colorPop.v)} />
+          onRename={(v) => renameVersion(colorPop.v, v)}
+          onMerge={(t) => { setMergeConfirm({ from: colorPop.v, to: t }); setColorPop(null); }}
+          onDelete={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }} />
       ))}
 
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
@@ -668,12 +717,34 @@ export default function BoardApp({
   );
 }
 
+/* A custom select: looks like a dropdown but the options are real, styleable
+   elements (native <option> can't be styled on iOS/macOS). */
+function MergeSelect({ versions, onPick }: { versions: string[]; onPick: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={'merge-select' + (open ? ' open' : '')}>
+      <button className="merge-trigger" onClick={() => setOpen((o) => !o)}>
+        <svg viewBox="0 0 16 16"><path d="M5 3v4a4 4 0 0 0 4 4h4M9.5 8.5l3.5 2.5-3.5 2.5" /></svg>
+        <span>Merge into…</span>
+        <svg className="merge-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
+      </button>
+      {open && (
+        <div className="merge-menu">
+          {versions.map((v) => (
+            <button key={v} className="merge-opt" onClick={() => onPick(v)}>{v}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ColorPopover({
-  x, y, label, current, completed, onPick, onToggleComplete, onRename, onDelete
+  x, y, label, current, completed, others, onPick, onToggleComplete, onRename, onMerge, onDelete
 }: {
-  x: number; y: number; label: string; current: number | null; completed: boolean;
+  x: number; y: number; label: string; current: number | null; completed: boolean; others: string[];
   onPick: (i: number) => void; onToggleComplete: () => void;
-  onRename: (v: string) => void; onDelete: () => void;
+  onRename: (v: string) => void; onMerge: (target: string) => void; onDelete: () => void;
 }) {
   return (
     <div className="color-pop" style={{ top: y, left: x }}>
@@ -692,6 +763,7 @@ function ColorPopover({
           ? <><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5l-4.5 4.5 4.5 4.5" /></svg> Reopen version</>
           : <><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg> Mark completed</>}
       </button>
+      {others.length > 0 && <MergeSelect versions={others} onPick={onMerge} />}
       <button className="pop-action danger" onClick={onDelete}>
         <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg> Delete version
       </button>

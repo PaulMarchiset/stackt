@@ -289,6 +289,25 @@ button { font-family: inherit; }
   border: 1.5px solid var(--border); background: #FBFAF6; border-radius: 9px; padding: 8px 10px; outline: none;
 }
 .pop-rename:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Custom merge dropdown (styled options work on every OS, unlike native <option>) */
+.merge-select { display: flex; flex-direction: column; }
+.merge-trigger {
+  display: flex; align-items: center; gap: 8px; width: 100%; border: none; cursor: pointer;
+  background: var(--canvas); color: var(--ink); font-family: var(--sans); font-size: 12.5px; font-weight: 700;
+  border-radius: 10px; padding: 9px 11px; transition: background 130ms var(--ease);
+}
+.merge-trigger:hover { background: rgba(26, 26, 24, 0.06); }
+.merge-trigger svg { flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.merge-trigger > svg:first-child { width: 15px; height: 15px; }
+.merge-chevron { width: 13px; height: 13px; margin-left: auto; color: var(--ink-mute); transition: transform 140ms var(--ease); }
+.merge-select.open .merge-chevron { transform: rotate(180deg); }
+.merge-menu { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; max-height: 200px; overflow-y: auto; overscroll-behavior-y: contain; }
+.merge-opt {
+  border: none; background: transparent; text-align: left; cursor: pointer;
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink);
+  padding: 9px 11px; border-radius: 8px; transition: background 130ms var(--ease);
+}
+.merge-opt:hover { background: var(--canvas); }
 
 .danger-link {
   border: none; background: transparent; color: var(--ink-mute); font-size: 12px; font-weight: 700;
@@ -419,7 +438,6 @@ button { font-family: inherit; }
 .edit-row input { flex: 1; }
 .card-edit input.version { font-family: var(--mono); font-size: 12px; }
 .card-edit input.date { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); width: 100%; }
-.edit-row.date-row { gap: 10px; }
 .date-field { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .date-field > span { font-family: var(--display); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
 .date-field > span em { font-style: normal; font-weight: 600; opacity: 0.7; text-transform: none; letter-spacing: 0; }
@@ -749,13 +767,13 @@ button { font-family: inherit; }
   * { -webkit-tap-highlight-color: transparent; }
   @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
-  /* Board page fills the viewport; columns/agenda scroll internally so the
-     chrome (header, version strip, pager) stays put. */
-  .app { height: 100dvh; overflow: hidden; }
+  /* Mobile: the page scrolls naturally (robust on every mobile browser — no
+     fixed viewport height / nested scroll). The top bar stays pinned; the board
+     grows to its tallest column and the body scrolls. */
   .project-meta { display: none; }
 
   /* ---- Compact mobile header ---- */
-  .m-topbar { flex-shrink: 0; background: var(--canvas); border-bottom: 1px solid rgba(26,26,24,0.06); padding-top: env(safe-area-inset-top); }
+  .m-topbar { position: sticky; top: 0; z-index: 20; flex-shrink: 0; background: var(--canvas); border-bottom: 1px solid rgba(26,26,24,0.06); padding-top: env(safe-area-inset-top); }
   .m-topbar-row { display: flex; align-items: center; gap: 12px; padding: 16px 14px 14px; }
   .m-topbar-row2 { display: flex; align-items: center; gap: 8px; padding: 2px 14px 16px; }
   .m-topbar .brand { flex-shrink: 0; }
@@ -795,17 +813,19 @@ button { font-family: inherit; }
   .pager-opt.active[data-status="done"] { background: var(--col-done); }
 
   .board {
-    flex: 1; min-height: 0; display: flex; grid-template-columns: none; gap: 0; padding: 0; align-items: stretch;
-    overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+    display: flex; grid-template-columns: none; gap: 0; padding: 0; align-items: start;
+    overflow-x: auto; overflow-y: visible; scroll-snap-type: x mandatory;
     overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
   }
   .board::-webkit-scrollbar { display: none; }
+  /* Each column is its own height; the board is as tall as its tallest column and
+     the page scrolls. No fixed viewport height, so nothing gets clipped. */
   .board > .column {
-    flex: 0 0 100%; width: 100%; min-height: 0; scroll-snap-align: start;
-    overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+    flex: 0 0 100%; width: 100%; scroll-snap-align: start;
+    display: flex; flex-direction: column;
   }
   .board > .column .column-body {
-    min-height: 100%; border-radius: 0; gap: 12px;
+    flex: 1; min-height: 55vh; border-radius: 0; gap: 12px;
     padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
   }
   .column.drop-target { transform: none; }         /* no drag on touch */
@@ -814,13 +834,25 @@ button { font-family: inherit; }
   .card-meta { padding-left: 0; margin-top: 12px; }
 
   /* Bigger inputs stop iOS from auto-zooming the page on focus. */
-  .card-edit input, .card-edit textarea, .auth-input, .modal-form-input { font-size: 16px; }
+  /* All must be >=16px to stop iOS from zooming on focus — list the specific
+     ones too, since their higher specificity would otherwise win at <16px. */
+  .card-edit input, .card-edit textarea, .card-edit .title,
+  .card-edit input.version, .card-edit input.date,
+  .auth-input, .modal-form-input, .pop-rename { font-size: 16px; }
+
+  /* Start/End date inputs: let them shrink (min-width:0) so they don't overlap, and
+     join them into one control — Start's right edge and End's left edge squared. */
+  .date-row { gap: 0; }
+  .date-row .date-field { min-width: 0; }
+  .card-edit input.date { min-width: 0; }
+  .date-row .date-field:first-child .date { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .date-row .date-field:last-child .date { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: transparent; }
 
   /* ---- Vertical agenda (mobile timeline) ---- */
-  .agenda { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; display: flex; flex-direction: column; padding: 0 14px calc(28px + env(safe-area-inset-bottom)); }
+  .agenda { overflow-x: hidden; display: flex; flex-direction: column; padding: 0 14px calc(28px + env(safe-area-inset-bottom)); }
   /* Full-bleed sticky header: negative side margins cancel the agenda's padding so
      the bar (title + Add update) spans edge-to-edge and nothing shows through when stuck. */
-  .agenda-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; margin: 0 -14px 6px; padding: 12px 14px; background: var(--canvas); border-bottom: 1px solid rgba(26,26,24,0.06); }
+  .agenda-head { display: flex; align-items: center; gap: 10px; margin: 0 -14px 6px; padding: 12px 14px; background: var(--canvas); border-bottom: 1px solid rgba(26,26,24,0.06); }
   .agenda-head .cal-title { font-family: var(--display); font-weight: 800; font-size: 20px; letter-spacing: -0.02em; }
   .ag-section { margin-bottom: 10px; }
   .ag-section-head { display: flex; align-items: center; gap: 8px; padding: 8px 2px; font-family: var(--display); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
@@ -869,6 +901,11 @@ button { font-family: inherit; }
   .sheet-move .dot { width: 10px; height: 10px; }
   .sheet-move.current { background: var(--accent-soft); }
   .sheet-move:disabled { cursor: default; }
+  /* Bigger touch sizing for the custom merge dropdown inside the sheet */
+  .merge-trigger { font-size: 15px; padding: 14px 16px; border-radius: 12px; }
+  .merge-opt { font-size: 15px; padding: 13px 16px; border-radius: 12px; }
+  .merge-opt:hover { background: var(--canvas); }
+  .merge-menu { max-height: 244px; }
   .sheet-check { margin-left: auto; color: var(--green-ink); font-weight: 800; }
   .sheet-rename { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
   .sheet-rename label { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
