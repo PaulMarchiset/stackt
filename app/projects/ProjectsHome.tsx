@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Project } from '@/lib/types';
 import { versionTheme } from '@/lib/util';
+import { useDevMode } from '@/lib/useDevMode';
+import { vocab } from '@/lib/labels';
 import Modal from '@/app/board/Modal';
+import WhatsNew from '@/app/components/WhatsNew';
 import Logo from '../Logo';
 
 export type CardLite = { id: string; project_id: string; type: string };
@@ -24,6 +27,8 @@ export default function ProjectsHome({
   initialProjects: Project[]; cards: CardLite[]; userEmail: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const [devMode] = useDevMode();
+  const v = vocab(devMode);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [busy, setBusy] = useState(false);
@@ -114,7 +119,7 @@ export default function ProjectsHome({
 
   const projectCard = (p: Project) => {
     const { u, b } = counts(p.id);
-    const meta = `${u} update${u !== 1 ? 's' : ''}${b ? ` · ${b} bug${b !== 1 ? 's' : ''}` : ''}`;
+    const meta = `${u} ${(u !== 1 ? v.updates : v.update).toLowerCase()}${b ? ` · ${b} ${(b !== 1 ? v.bugs : v.bug).toLowerCase()}` : ''}`;
     return (
       <div key={p.id} className="proj-card">
         <div className="proj-actions">
@@ -165,6 +170,7 @@ export default function ProjectsHome({
 
   return (
     <div className="home">
+      <WhatsNew />
       <header className="home-top">
         <Logo height={22} className="brand-logo-full" />
         <div className="meta-spacer" />
@@ -213,8 +219,8 @@ export default function ProjectsHome({
             <input className="modal-form-input" spellCheck={false} inputMode="url" placeholder="https://github.com/org/repo" value={npRepo}
               onChange={(e) => setNpRepo(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setNewOpen(false); }} />
-            <label className="modal-form-label">First version <em>(optional)</em></label>
-            <input className="modal-form-input" spellCheck={false} placeholder="v1.0.0" value={npVersion}
+            <label className="modal-form-label">First {v.version.toLowerCase()} <em>(optional)</em></label>
+            <input className="modal-form-input" spellCheck={false} placeholder={`e.g. ${v.versionExample}`} value={npVersion}
               onChange={(e) => setNpVersion(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setNewOpen(false); }} />
             <div className="edit-actions">

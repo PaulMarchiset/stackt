@@ -74,6 +74,21 @@ export function sortByDate(cards: Card[]): Card[] {
   });
 }
 
+/* Kanban column order: unresolved bugs first, then overdue, then by date (undated last). */
+export function sortCards(cards: Card[]): Card[] {
+  const today = todayISO();
+  const rank = (c: Card) =>
+    c.type === 'bug' && !c.done ? 0
+      : (!c.done && c.target_date && c.target_date < today ? 1 : 2);
+  return cards.slice().sort((a, b) => {
+    const r = rank(a) - rank(b);
+    if (r) return r;
+    const da = a.target_date || '9999-12-31';
+    const db = b.target_date || '9999-12-31';
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
+}
+
 /* Build a browsable URL for a card's branch from the project's repo URL.
    Returns null if either piece is missing. Detects GitHub/GitLab/Bitbucket path styles. */
 export function branchUrl(repoUrl: string, branch: string): string | null {

@@ -5,6 +5,7 @@ export interface Card {
   id: string;
   project_id: string;
   title: string;
+  comment: string; // longer description / notes (optional; '' when unset)
   version: string;
   target_date: string | null; // YYYY-MM-DD — start day
   end_date: string | null;    // YYYY-MM-DD — optional last day (multi-day cards)

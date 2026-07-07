@@ -1,7 +1,10 @@
 {
-  "name": "update-tracker-web",
+  "name": "stackt-web",
   "version": "0.1.0",
   "private": true,
+  "license": "GPL-3.0-or-later",
+  "author": "Paul Marchiset (https://paulmarchiset.me)",
+  "homepage": "https://stackt.paulmarchiset.me",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

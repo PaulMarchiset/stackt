@@ -44,6 +44,7 @@ create table if not exists public.cards (
 -- Backfill columns added after the first deploy (safe to re-run).
 alter table public.cards add column if not exists end_date date;
 alter table public.cards add column if not exists branch text not null default '';
+alter table public.cards add column if not exists comment text not null default '';
 
 create index if not exists cards_project_idx on public.cards (project_id, status, position);
 create index if not exists cards_user_idx on public.cards (user_id);

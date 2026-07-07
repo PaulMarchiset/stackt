@@ -4,12 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
 import {
-  dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortByDate,
+  dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortCards,
   suggestNextVersion, versionColorIndex
 } from '@/lib/util';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { useDevMode } from '@/lib/useDevMode';
+import { vocab } from '@/lib/labels';
 import Sheet from '@/app/components/Sheet';
 import BranchChip from '@/app/components/BranchChip';
+import TypeTag from '@/app/components/TypeTag';
+import WhatsNew from '@/app/components/WhatsNew';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 import Logo from '../Logo';
@@ -26,6 +30,9 @@ export default function BoardApp({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const isMobile = useIsMobile();
+  const [devMode, setDevMode] = useDevMode();
+  const v = vocab(devMode);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
@@ -94,7 +101,7 @@ export default function BoardApp({
   async function addCard(values: Partial<Card>, status: Status) {
     if (!project) return;
     const row = {
-      project_id: project.id, title: values.title ?? '', version: values.version ?? '',
+      project_id: project.id, title: values.title ?? '', comment: values.comment ?? '', version: values.version ?? '',
       target_date: values.target_date ?? null, end_date: values.end_date ?? null,
       status, done: status === 'done', type: values.type ?? 'update', branch: values.branch ?? ''
     };
@@ -131,7 +138,7 @@ export default function BoardApp({
   function setActiveVersion(v: string) { if (project) { setEditing(null); patchProject(project.id, { active_version: v }); } }
   function openAddVersion() {
     if (!project) return;
-    setVerDraft(suggestNextVersion(projectVersions(project, projCards)));
+    setVerDraft(devMode ? suggestNextVersion(projectVersions(project, projCards)) : '');
     setAddVerOpen(true);
   }
   function confirmAddVersion() {
@@ -198,6 +205,11 @@ export default function BoardApp({
       completed_versions: has ? project.completed_versions.filter((z) => z !== v) : [...project.completed_versions, v],
       active_version: !has && project.active_version === v ? '' : project.active_version
     });
+    // Completing a version closes whatever's left in it (its unfinished cards → done).
+    if (!has) {
+      setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === v && !c.done ? { ...c, done: true, status: 'done' } : c)));
+      void persist(supabase.from('cards').update({ done: true, status: 'done' }).eq('project_id', project.id).eq('version', v).eq('done', false));
+    }
     setColorPop(null);
   }
 
@@ -240,6 +252,9 @@ export default function BoardApp({
           </button>
         </div>
         {renderRepoButton()}
+        <button className="btn ghost icon-only" title="Settings" onClick={() => setSettingsOpen(true)}>
+          <svg viewBox="0 0 24 24" className="ic"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+        </button>
         <a className="btn ghost" href="/projects" title="All projects">
           <svg viewBox="0 0 24 24" className="ic"><path d="M8.4 3H4.6C4.03995 3 3.75992 3 3.54601 3.10899C3.35785 3.20487 3.20487 3.35785 3.10899 3.54601C3 3.75992 3 4.03995 3 4.6V8.4C3 8.96005 3 9.24008 3.10899 9.45399C3.20487 9.64215 3.35785 9.79513 3.54601 9.89101C3.75992 10 4.03995 10 4.6 10H8.4C8.96005 10 9.24008 10 9.45399 9.89101C9.64215 9.79513 9.79513 9.64215 9.89101 9.45399C10 9.24008 10 8.96005 10 8.4V4.6C10 4.03995 10 3.75992 9.89101 3.54601C9.79513 3.35785 9.64215 3.20487 9.45399 3.10899C9.24008 3 8.96005 3 8.4 3Z" /><path d="M19.4 3H15.6C15.0399 3 14.7599 3 14.546 3.10899C14.3578 3.20487 14.2049 3.35785 14.109 3.54601C14 3.75992 14 4.03995 14 4.6V8.4C14 8.96005 14 9.24008 14.109 9.45399C14.2049 9.64215 14.3578 9.79513 14.546 9.89101C14.7599 10 15.0399 10 15.6 10H19.4C19.9601 10 20.2401 10 20.454 9.89101C20.6422 9.79513 20.7951 9.64215 20.891 9.45399C21 9.24008 21 8.96005 21 8.4V4.6C21 4.03995 21 3.75992 20.891 3.54601C20.7951 3.35785 20.6422 3.20487 20.454 3.10899C20.2401 3 19.9601 3 19.4 3Z" /><path d="M19.4 14H15.6C15.0399 14 14.7599 14 14.546 14.109C14.3578 14.2049 14.2049 14.3578 14.109 14.546C14 14.7599 14 15.0399 14 15.6V19.4C14 19.9601 14 20.2401 14.109 20.454C14.2049 20.6422 14.3578 20.7951 14.546 20.891C14.7599 21 15.0399 21 15.6 21H19.4C19.9601 21 20.2401 21 20.454 20.891C20.6422 20.7951 20.7951 20.6422 20.891 20.454C21 20.2401 21 19.9601 21 19.4V15.6C21 15.0399 21 14.7599 20.891 14.546C20.7951 14.3578 20.6422 14.2049 20.454 14.109C20.2401 14 19.9601 14 19.4 14Z" /><path d="M8.4 14H4.6C4.03995 14 3.75992 14 3.54601 14.109C3.35785 14.2049 3.20487 14.3578 3.10899 14.546C3 14.7599 3 15.0399 3 15.6V19.4C3 19.9601 3 20.2401 3.10899 20.454C3.20487 20.6422 3.35785 20.7951 3.54601 20.891C3.75992 21 4.03995 21 4.6 21H8.4C8.96005 21 9.24008 21 9.45399 20.891C9.64215 20.7951 9.79513 20.6422 9.89101 20.454C10 20.2401 10 19.9601 10 19.4V15.6C10 15.0399 10 14.7599 9.89101 14.546C9.79513 14.3578 9.64215 14.2049 9.45399 14.109C9.24008 14 8.96005 14 8.4 14Z" /></svg> Projects
         </a>
@@ -285,12 +300,12 @@ export default function BoardApp({
   );
 
   // Git-repo control that lives in the header next to the Board/Timeline toggle.
-  const renderRepoButton = () => project && (
+  const renderRepoButton = () => project && devMode && (
     <button className={'btn ghost repo-btn' + (project.repo_url ? ' set' : '')} onClick={openRepoEdit}
       title={project.repo_url ? 'Git repository' : 'Set git repository'}>
       {project.repo_url ? (
         <>
-          <svg viewBox="0 0 16 16" className="ic"><circle cx="4" cy="3.5" r="1.5" /><circle cx="4" cy="12.5" r="1.5" /><circle cx="12" cy="4" r="1.5" /><path d="M4 5v6M12 5.5V7a3 3 0 0 1-3 3H4" /></svg>
+          <svg viewBox="0 0 24 24" className="ic"><path d="M6 3V15M6 15C4.34315 15 3 16.3431 3 18C3 19.6569 4.34315 21 6 21C7.65685 21 9 19.6569 9 18M6 15C7.65685 15 9 16.3431 9 18M18 9C19.6569 9 21 7.65685 21 6C21 4.34315 19.6569 3 18 3C16.3431 3 15 4.34315 15 6C15 7.65685 16.3431 9 18 9ZM18 9C18 11.3869 17.0518 13.6761 15.364 15.364C13.6761 17.0518 11.3869 18 9 18" /></svg>
           <span className="repo-btn-label">{repoLabel(project.repo_url)}</span>
         </>
       ) : (
@@ -340,7 +355,7 @@ export default function BoardApp({
           <button className={'checkbox' + (card.done ? ' checked' : '')} title="Mark done" onClick={() => toggleDone(card.id)}>
             <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
           </button>
-          <div className="card-title">{card.title || 'Untitled update'}</div>
+          <div className="card-title">{card.title || `Untitled ${v.update.toLowerCase()}`}</div>
           <div className={'card-menu' + (isMobile ? ' m-visible' : '')}>
             {isMobile ? (
               <button className="icon-btn" title="Actions" onClick={() => setSheet({ kind: 'card', id: card.id })}>
@@ -358,10 +373,9 @@ export default function BoardApp({
             )}
           </div>
         </div>
+        {card.comment && <div className="card-comment">{card.comment}</div>}
         <div className="card-meta">
-          {card.type === 'bug' && (
-            <span className="chip bug"><svg viewBox="0 0 24 24"><path d="M12 20V11M12 20C13.5913 20 15.1174 19.3679 16.2426 18.2426C17.3679 17.1174 18 15.5913 18 14V11C18 9.93913 17.5786 8.92172 16.8284 8.17157C16.0783 7.42143 15.0609 7 14 7H10C8.93913 7 7.92172 7.42143 7.17157 8.17157C6.42143 8.92172 6 9.93913 6 11V14C6 15.5913 6.63214 17.1174 7.75736 18.2426C8.88258 19.3679 10.4087 20 12 20ZM14.1201 3.88L16.0001 2M20.9999 21C21.0011 19.9712 20.6059 18.9816 19.8963 18.2367C19.1868 17.4918 18.2175 17.0489 17.1899 17M21 5C20.9988 5.98215 20.6364 6.92956 19.9817 7.66169C19.327 8.39383 18.4259 8.85951 17.45 8.97M22 13H18M3 21C2.99884 19.9712 3.39409 18.9816 4.10362 18.2367C4.81315 17.4918 5.78241 17.0489 6.81 17M3 5C3.00113 5.98215 3.36357 6.92956 4.01825 7.66169C4.67293 8.39383 5.57408 8.85951 6.55 8.97M6 13H2M8 2L9.88 3.88M9 7.13V6C9 5.20435 9.31607 4.44129 9.87868 3.87868C10.4413 3.31607 11.2044 3 12 3C12.7956 3 13.5587 3.31607 14.1213 3.87868C14.6839 4.44129 15 5.20435 15 6V7.13" /></svg>Bug</span>
-          )}
+          {card.type === 'bug' && <TypeTag />}
           {card.version && <span className="chip version">{card.version}</span>}
           <span className={'date ' + dcls}>
             <svg viewBox="0 0 24 24"><path d="M21 10H3M16 2V6M8 2V6M7.8 22H16.2C17.8802 22 18.7202 22 19.362 21.673C19.9265 21.3854 20.3854 20.9265 20.673 20.362C21 19.7202 21 18.8802 21 17.2V8.8C21 7.11984 21 6.27976 20.673 5.63803C20.3854 5.07354 19.9265 4.6146 19.362 4.32698C18.7202 4 17.8802 4 16.2 4H7.8C6.11984 4 5.27976 4 4.63803 4.32698C4.07354 4.6146 3.6146 5.07354 3.32698 5.63803C3 6.27976 3 7.11984 3 8.8V17.2C3 18.8802 3 19.7202 3.32698 20.362C3.6146 20.9265 4.07354 21.3854 4.63803 21.673C5.27976 22 6.11984 22 7.8 22Z" /></svg>
@@ -446,7 +460,7 @@ export default function BoardApp({
 
       <div className="version-bar">
         <button className={'vchip' + (active === '' ? ' active' : '')} onClick={() => setActiveVersion('')}>
-          <span className="vlabel">All versions</span>
+          <span className="vlabel">{`All ${v.versions.toLowerCase()}`}</span>
           <span className="vcount">{projCards.length}</span>
         </button>
 
@@ -468,11 +482,11 @@ export default function BoardApp({
         ))}
 
         <button className="vchip add" onClick={openAddVersion}>
-          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> Version
+          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> {v.version}
         </button>
 
         <div className="type-filter">
-          {([['all', 'All'], ['update', 'Updates'], ['bug', bugCount ? `Bugs · ${bugCount}` : 'Bugs']] as const).map(([val, label]) => (
+          {([['all', 'All'], ['update', v.updates], ['bug', bugCount ? `${v.bugs} · ${bugCount}` : v.bugs]] as const).map(([val, label]) => (
             <button key={val} className={'tf-opt' + (val === 'bug' ? ' bug' : '') + (typeFilter === val ? ' active' : '')}
               onClick={() => { setTypeFilter(val); setEditing(null); }}>{label}</button>
           ))}
@@ -496,7 +510,7 @@ export default function BoardApp({
           )}
           <main className="board" ref={boardRef} onScroll={isMobile ? onBoardScroll : undefined}>
             {COLUMNS.map((col) => {
-              const colCards = sortByDate(scopedCards.filter((c) => c.status === col.key));
+              const colCards = sortCards(scopedCards.filter((c) => c.status === col.key));
               const addingBug = typeFilter === 'bug';
               return (
                 <section key={col.key} className="column" data-status={col.key}
@@ -526,7 +540,7 @@ export default function BoardApp({
                     <button className={'add-card' + (addingBug ? ' add-bug' : '')}
                       onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
                       <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg>
-                      {addingBug ? 'Add bug' : 'Add update'}
+                      {addingBug ? `Add ${v.bugNoun}` : `Add ${v.updateNoun}`}
                     </button>
                   </div>
                 </section>
@@ -537,7 +551,7 @@ export default function BoardApp({
       )}
 
       {isMobile && view === 'board' && (mobileEditColumn || mobileEditCard) && (
-        <Modal title={mobileEditCard ? 'Edit update' : 'New update'} onClose={() => setEditing(null)}>
+        <Modal title={mobileEditCard ? `Edit ${v.update.toLowerCase()}` : `New ${v.update.toLowerCase()}`} onClose={() => setEditing(null)}>
           <CardEditor bare project={project} projCards={projCards}
             card={mobileEditCard ?? undefined}
             status={mobileEditCard ? mobileEditCard.status : (mobileEditColumn as Status)}
@@ -574,13 +588,13 @@ export default function BoardApp({
       )}
 
       {addVerOpen && (
-        <Modal title="New version" className="modal-center" onClose={() => setAddVerOpen(false)}>
+        <Modal title={`New ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setAddVerOpen(false)}>
           <div className="modal-form">
-            <label className="modal-form-label">Version label</label>
-            <input className="modal-form-input" autoFocus spellCheck={false} placeholder="e.g. v1.2.0"
+            <label className="modal-form-label">{`${v.version} label`}</label>
+            <input className="modal-form-input" autoFocus spellCheck={false} placeholder={`e.g. ${v.versionExample}`}
               value={verDraft} onChange={(e) => setVerDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') confirmAddVersion(); if (e.key === 'Escape') setAddVerOpen(false); }} />
-            <p className="modal-form-hint">Groups updates &amp; bugs under a release. You can rename or recolor it later.</p>
+            <p className="modal-form-hint">{`Groups ${v.updates.toLowerCase()} under a ${v.version.toLowerCase()}. You can rename or recolor it later.`}</p>
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setAddVerOpen(false)}>Cancel</button>
@@ -591,7 +605,7 @@ export default function BoardApp({
       )}
 
       {mergeConfirm && (
-        <Modal title="Merge versions" className="modal-center" onClose={() => setMergeConfirm(null)}>
+        <Modal title={`${v.merge} ${v.versions.toLowerCase()}`} className="modal-center" onClose={() => setMergeConfirm(null)}>
           <div className="modal-form">
             <p className="modal-form-hint">
               Move every card from <strong>“{mergeConfirm.from}”</strong> into <strong>“{mergeConfirm.to}”</strong>,
@@ -600,17 +614,32 @@ export default function BoardApp({
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setMergeConfirm(null)}>Cancel</button>
-              <button className="btn solid" onClick={() => { renameVersion(mergeConfirm.from, mergeConfirm.to); setMergeConfirm(null); }}>Merge</button>
+              <button className="btn solid" onClick={() => { renameVersion(mergeConfirm.from, mergeConfirm.to); setMergeConfirm(null); }}>{v.merge}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {settingsOpen && (
+        <Modal title="Settings" className="modal-wide modal-center" onClose={() => setSettingsOpen(false)}>
+          <div className="settings-list">
+            <div className="setting-row">
+              <div className="setting-text">
+                <div className="setting-title">Developer mode</div>
+                <div className="setting-desc">Show the git repository button and branch fields.</div>
+              </div>
+              <button className={'switch' + (devMode ? ' on' : '')} role="switch" aria-checked={devMode}
+                aria-label="Developer mode" onClick={() => setDevMode(!devMode)}><span /></button>
             </div>
           </div>
         </Modal>
       )}
 
       {delVerConfirm && (
-        <Modal title="Delete version" className="modal-center" onClose={() => setDelVerConfirm(null)}>
+        <Modal title={`Delete ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setDelVerConfirm(null)}>
           <div className="modal-form">
             <p className="modal-form-hint">
-              Delete <strong>“{delVerConfirm}”</strong>? Its cards are kept but lose this version label. This can&apos;t be undone.
+              Delete <strong>“{delVerConfirm}”</strong>? Its cards are kept but lose this {v.version.toLowerCase()} label. This can&apos;t be undone.
             </p>
             <div className="edit-actions">
               <div className="meta-spacer" />
@@ -646,6 +675,7 @@ export default function BoardApp({
       {sheet?.kind === 'menu' && (
         <Sheet title="Menu" onClose={() => setSheet(null)}>
           <a className="sheet-item link" href="/projects">All projects</a>
+          <button className="sheet-item" onClick={() => { setSettingsOpen(true); setSheet(null); }}>Settings</button>
           <form action="/auth/signout" method="post">
             <button className="sheet-item danger" type="submit">Sign out</button>
           </form>
@@ -677,7 +707,7 @@ export default function BoardApp({
       {colorPop && (isMobile ? (
         <Sheet title={colorPop.v} onClose={() => setColorPop(null)}>
           <div className="sheet-rename">
-            <label>Rename version</label>
+            <label>{`Rename ${v.version.toLowerCase()}`}</label>
             <input className="auth-input" defaultValue={colorPop.v} spellCheck={false}
               onBlur={(e) => renameVersion(colorPop.v, e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
@@ -691,19 +721,19 @@ export default function BoardApp({
           </div>
           <button className={'sheet-item' + (isVersionCompleted(project, colorPop.v) ? '' : ' done')}
             onClick={() => toggleCompleted(colorPop.v)}>
-            {isVersionCompleted(project, colorPop.v) ? 'Reopen version' : 'Mark completed'}
+            {isVersionCompleted(project, colorPop.v) ? `Reopen ${v.version.toLowerCase()}` : 'Mark completed'}
           </button>
           {projectVersions(project, projCards).filter((x) => x !== colorPop.v).length > 0 && (
             <>
-              <div className="sheet-section-label">Merge into</div>
-              <MergeSelect versions={projectVersions(project, projCards).filter((x) => x !== colorPop.v)}
-                onPick={(v) => { setMergeConfirm({ from: colorPop.v, to: v }); setColorPop(null); }} />
+              <div className="sheet-section-label">{`${v.merge} into`}</div>
+              <MergeSelect versions={projectVersions(project, projCards).filter((x) => x !== colorPop.v)} verb={v.merge}
+                onPick={(vv) => { setMergeConfirm({ from: colorPop.v, to: vv }); setColorPop(null); }} />
             </>
           )}
-          <button className="sheet-item danger" onClick={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }}>Delete version</button>
+          <button className="sheet-item danger" onClick={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }}>{`Delete ${v.version.toLowerCase()}`}</button>
         </Sheet>
       ) : (
-        <ColorPopover x={colorPop.x} y={colorPop.y} label={colorPop.v}
+        <ColorPopover x={colorPop.x} y={colorPop.y} label={colorPop.v} word={v.version} mergeVerb={v.merge}
           current={versionColorIndex(project, colorPop.v)} completed={isVersionCompleted(project, colorPop.v)}
           others={projectVersions(project, projCards).filter((x) => x !== colorPop.v)}
           onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)}
@@ -713,19 +743,20 @@ export default function BoardApp({
       ))}
 
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
+      <WhatsNew />
     </div>
   );
 }
 
 /* A custom select: looks like a dropdown but the options are real, styleable
    elements (native <option> can't be styled on iOS/macOS). */
-function MergeSelect({ versions, onPick }: { versions: string[]; onPick: (v: string) => void }) {
+function MergeSelect({ versions, verb, onPick }: { versions: string[]; verb: string; onPick: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={'merge-select' + (open ? ' open' : '')}>
       <button className="merge-trigger" onClick={() => setOpen((o) => !o)}>
         <svg viewBox="0 0 16 16"><path d="M5 3v4a4 4 0 0 0 4 4h4M9.5 8.5l3.5 2.5-3.5 2.5" /></svg>
-        <span>Merge into…</span>
+        <span>{`${verb} into…`}</span>
         <svg className="merge-chevron" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
       </button>
       {open && (
@@ -740,15 +771,15 @@ function MergeSelect({ versions, onPick }: { versions: string[]; onPick: (v: str
 }
 
 function ColorPopover({
-  x, y, label, current, completed, others, onPick, onToggleComplete, onRename, onMerge, onDelete
+  x, y, label, word, mergeVerb, current, completed, others, onPick, onToggleComplete, onRename, onMerge, onDelete
 }: {
-  x: number; y: number; label: string; current: number | null; completed: boolean; others: string[];
+  x: number; y: number; label: string; word: string; mergeVerb: string; current: number | null; completed: boolean; others: string[];
   onPick: (i: number) => void; onToggleComplete: () => void;
   onRename: (v: string) => void; onMerge: (target: string) => void; onDelete: () => void;
 }) {
   return (
     <div className="color-pop" style={{ top: y, left: x }}>
-      <input className="pop-rename" defaultValue={label} spellCheck={false} aria-label="Version name"
+      <input className="pop-rename" defaultValue={label} spellCheck={false} aria-label={`${word} name`}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRename((e.target as HTMLInputElement).value); } }}
         onBlur={(e) => onRename(e.target.value)} />
       <div className="color-row">
@@ -760,12 +791,12 @@ function ColorPopover({
       <div className="pop-div" />
       <button className={'pop-action' + (completed ? '' : ' done')} onClick={onToggleComplete}>
         {completed
-          ? <><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5l-4.5 4.5 4.5 4.5" /></svg> Reopen version</>
+          ? <><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5l-4.5 4.5 4.5 4.5" /></svg> {`Reopen ${word.toLowerCase()}`}</>
           : <><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg> Mark completed</>}
       </button>
-      {others.length > 0 && <MergeSelect versions={others} onPick={onMerge} />}
+      {others.length > 0 && <MergeSelect versions={others} verb={mergeVerb} onPick={onMerge} />}
       <button className="pop-action danger" onClick={onDelete}>
-        <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg> Delete version
+        <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg> {`Delete ${word.toLowerCase()}`}
       </button>
     </div>
   );

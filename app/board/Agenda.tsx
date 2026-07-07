@@ -2,7 +2,10 @@
 
 import type { Card, Project } from '@/lib/types';
 import { dateClass, formatDate, formatDateRange, todayISO, versionColorIndex } from '@/lib/util';
+import { useDevMode } from '@/lib/useDevMode';
+import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
+import TypeTag from '@/app/components/TypeTag';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 
@@ -37,6 +40,8 @@ export default function Agenda({
   onSubmit: (v: Partial<Card>) => void;
   onCancel: () => void;
 }) {
+  const [devMode] = useDevMode();
+  const v = vocab(devMode);
   const today = todayISO();
   const isNew = !!editing && editing.startsWith('__new__');
   const editCard = editing && !isNew ? cards.find((c) => c.id === editing) : undefined;
@@ -76,9 +81,7 @@ export default function Agenda({
         <div className="ag-body">
           <button className="ag-title" onClick={() => onEdit(c.id)}>{c.title || 'Untitled'}</button>
           <div className="ag-meta">
-            {c.type === 'bug' && (
-              <span className="chip bug"><svg viewBox="0 0 24 24"><path d="M12 20V11M12 20C13.5913 20 15.1174 19.3679 16.2426 18.2426C17.3679 17.1174 18 15.5913 18 14V11C18 9.93913 17.5786 8.92172 16.8284 8.17157C16.0783 7.42143 15.0609 7 14 7H10C8.93913 7 7.92172 7.42143 7.17157 8.17157C6.42143 8.92172 6 9.93913 6 11V14C6 15.5913 6.63214 17.1174 7.75736 18.2426C8.88258 19.3679 10.4087 20 12 20ZM14.1201 3.88L16.0001 2M20.9999 21C21.0011 19.9712 20.6059 18.9816 19.8963 18.2367C19.1868 17.4918 18.2175 17.0489 17.1899 17M21 5C20.9988 5.98215 20.6364 6.92956 19.9817 7.66169C19.327 8.39383 18.4259 8.85951 17.45 8.97M22 13H18M3 21C2.99884 19.9712 3.39409 18.9816 4.10362 18.2367C4.81315 17.4918 5.78241 17.0489 6.81 17M3 5C3.00113 5.98215 3.36357 6.92956 4.01825 7.66169C4.67293 8.39383 5.57408 8.85951 6.55 8.97M6 13H2M8 2L9.88 3.88M9 7.13V6C9 5.20435 9.31607 4.44129 9.87868 3.87868C10.4413 3.31607 11.2044 3 12 3C12.7956 3 13.5587 3.31607 14.1213 3.87868C14.6839 4.44129 15 5.20435 15 6V7.13" /></svg>Bug</span>
-            )}
+            {c.type === 'bug' && <TypeTag />}
             {c.version && <span className={'chip version' + (ci != null ? ' card-theme-' + ci : '')}>{c.version}</span>}
             {c.branch && <BranchChip repoUrl={project.repo_url} branch={c.branch} />}
             {(multi || dcls === 'overdue') && (
@@ -106,12 +109,12 @@ export default function Agenda({
         <div className="cal-title">Timeline</div>
         <div className="meta-spacer" />
         <button className="btn solid" onClick={() => onAdd(today)}>
-          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> Add update
+          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> {`Add ${v.update.toLowerCase()}`}
         </button>
       </div>
 
       {sections.length === 0 ? (
-        <div className="empty-hint">Nothing scheduled yet — add an update to get started.</div>
+        <div className="empty-hint">{`Nothing scheduled yet — add ${devMode ? 'an' : 'a'} ${v.update.toLowerCase()} to get started.`}</div>
       ) : (
         sections.map((s) => (
           <section key={s.key} className={'ag-section' + (s.key === 'overdue' ? ' overdue' : '')}>
@@ -122,7 +125,7 @@ export default function Agenda({
       )}
 
       {(isNew || editCard) && (
-        <Modal title={isNew ? 'New update' : 'Edit update'} onClose={onCancel}>
+        <Modal title={isNew ? `New ${v.update.toLowerCase()}` : `Edit ${v.update.toLowerCase()}`} onClose={onCancel}>
           <CardEditor bare project={project} projCards={projCards}
             card={editCard} status={editCard ? editCard.status : 'todo'}
             defaultDate={isNew ? newCardDate : undefined}

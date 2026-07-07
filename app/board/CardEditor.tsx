@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card, CardType, Project, Status } from '@/lib/types';
 import { isVersionCompleted, projectVersions, suggestNextVersion, versionColorIndex } from '@/lib/util';
+import { useDevMode } from '@/lib/useDevMode';
+import { vocab } from '@/lib/labels';
+import DateField from './DateField';
 
 export default function CardEditor({
   project, projCards, card, status, defaultType, defaultDate, bare, onSubmit, onCancel
@@ -11,7 +14,10 @@ export default function CardEditor({
   defaultType?: CardType; defaultDate?: string; bare?: boolean;
   onSubmit: (v: Partial<Card>) => void; onCancel: () => void;
 }) {
+  const [devMode] = useDevMode();
+  const v = vocab(devMode);
   const [title, setTitle] = useState(card?.title ?? '');
+  const [comment, setComment] = useState(card?.comment ?? '');
   const [version, setVersion] = useState(card ? card.version : project.active_version || '');
   const [date, setDate] = useState<string>(card?.target_date ?? defaultDate ?? '');
   const [endDate, setEndDate] = useState<string>(card?.end_date ?? '');
@@ -34,7 +40,7 @@ export default function CardEditor({
     if (!t) { titleRef.current?.focus(); return; }
     // end_date only makes sense alongside a start, and never before it.
     const end = date && endDate && endDate > date ? endDate : null;
-    onSubmit({ title: t, version: version.trim(), target_date: date || null, end_date: end, branch: branch.trim(), type });
+    onSubmit({ title: t, comment: comment.trim(), version: version.trim(), target_date: date || null, end_date: end, branch: branch.trim(), type });
   }
 
   const body = (
@@ -43,48 +49,53 @@ export default function CardEditor({
           {(['update', 'bug'] as const).map((t) => (
             <button key={t} type="button"
               className={'type-opt' + (type === t ? ' active' : '') + (t === 'bug' && type === t ? ' bug-active' : '')}
-              onClick={() => setType(t)}>{t === 'update' ? 'Update' : 'Bug'}</button>
+              onClick={() => setType(t)}>{t === 'update' ? v.update : v.bug}</button>
           ))}
         </div>
         <textarea ref={titleRef} className="title" rows={1}
-          placeholder={type === 'bug' ? "What's the bug?" : "What's the update?"}
+          placeholder={`What's the ${type === 'bug' ? v.bugNoun : v.updateNoun}?`}
           value={title} onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); if (e.key === 'Escape') onCancel(); }} />
-        <div className="ver-label">Version</div>
+        <textarea className="comment" rows={2} placeholder="Add a description… (optional)"
+          value={comment} onChange={(e) => setComment(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); if (e.key === 'Escape') onCancel(); }} />
+        <div className="ver-label">{v.version}</div>
         <div className="ver-quick">
           {pickable.map((v) => (
             <button key={v} type="button"
               className={'ver-pick card-theme-' + (versionColorIndex(project, v) ?? 0) + (version.trim() === v ? ' active' : '')}
               onClick={() => setVersion(v)}>{v}</button>
           ))}
-          <button type="button" className="ver-pick" onClick={() => setVersion(suggestNextVersion(vers))}>+ New</button>
+          <button type="button" className="ver-pick" onClick={() => setVersion(devMode ? suggestNextVersion(vers) : '')}>+ New</button>
         </div>
         <div className="edit-row">
-          <input className="version" placeholder="Type a version, e.g. v1.0.0" value={version}
+          <input className="version" placeholder={`Type a ${v.version.toLowerCase()}, e.g. ${v.versionExample}`} value={version}
             onChange={(e) => setVersion(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
         </div>
         <div className="ver-label">Schedule</div>
         <div className="edit-row date-row">
-          <label className="date-field">
+          <div className="date-field">
             <span>Start</span>
-            <input className="date" type="date" value={date}
-              onChange={(e) => { const v = e.target.value; setDate(v); if (endDate && (!v || endDate < v)) setEndDate(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
-          </label>
-          <label className="date-field">
+            <DateField value={date} placeholder="Pick a date"
+              onChange={(v) => { setDate(v); if (endDate && (!v || endDate < v)) setEndDate(''); }} />
+          </div>
+          <div className="date-field">
             <span>End <em>(optional)</em></span>
-            <input className="date" type="date" value={endDate} min={date || undefined} disabled={!date}
-              onChange={(e) => setEndDate(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
-          </label>
+            <DateField value={endDate} min={date || undefined} disabled={!date} placeholder="Pick a date"
+              onChange={(v) => setEndDate(v)} />
+          </div>
         </div>
-        <div className="ver-label">Git branch <em>(optional)</em></div>
-        <div className="edit-row">
-          <input className="version branch" placeholder="e.g. feature/login" value={branch} spellCheck={false}
-            onChange={(e) => setBranch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
-        </div>
+        {devMode && (
+          <>
+            <div className="ver-label">Git branch <em>(optional)</em></div>
+            <div className="edit-row">
+              <input className="version branch" placeholder="e.g. feature/login" value={branch} spellCheck={false}
+                onChange={(e) => setBranch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
+            </div>
+          </>
+        )}
         <div className="edit-actions">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>
           <button className="btn solid" onClick={submit}>{card ? 'Save' : 'Add'}</button>
