@@ -9,9 +9,15 @@ import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
 import Modal from '@/app/board/Modal';
 import WhatsNew from '@/app/components/WhatsNew';
+import AccountMenu from '@/app/components/AccountMenu';
 import Logo from '../Logo';
 
-export type CardLite = { id: string; project_id: string; type: string };
+export type CardLite = { id: string; project_id: string; type: string; done: boolean };
+
+/* Per-project board mode: follow the account default, or force developer/simple. */
+type Mode = 'default' | 'dev' | 'simple';
+const modeToDev = (m: Mode): boolean | null => (m === 'default' ? null : m === 'dev');
+const devToMode = (d: boolean | null): Mode => (d == null ? 'default' : d ? 'dev' : 'simple');
 
 /* Up to two initials from a project name for its card avatar. */
 function initials(name: string): string {
@@ -21,18 +27,30 @@ function initials(name: string): string {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
+/* Three-way segmented control for the board mode. */
+function ModeSelect({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div className="seg">
+      {(['default', 'dev', 'simple'] as Mode[]).map((m) => (
+        <button key={m} type="button" className={'seg-opt' + (value === m ? ' active' : '')} onClick={() => onChange(m)}>
+          {m === 'default' ? 'Default' : m === 'dev' ? 'Developer' : 'Simple'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ProjectsHome({
-  initialProjects, cards, userEmail
+  initialProjects, cards, userEmail, userName = ''
 }: {
-  initialProjects: Project[]; cards: CardLite[]; userEmail: string;
+  initialProjects: Project[]; cards: CardLite[]; userEmail: string; userName?: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [devMode] = useDevMode();
-  const v = vocab(devMode);
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editProj, setEditProj] = useState<{ id: string; name: string; mode: Mode } | null>(null);
   const [confirmDel, setConfirmDel] = useState<{ id: string; name: string } | null>(null);
   const [delText, setDelText] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -56,6 +74,9 @@ export default function ProjectsHome({
   const [npName, setNpName] = useState('');
   const [npRepo, setNpRepo] = useState('');
   const [npVersion, setNpVersion] = useState('');
+  const [npMode, setNpMode] = useState<Mode>('default');
+  // Vocabulary for the create dialog follows the mode being chosen for the new project.
+  const npV = vocab(npMode === 'default' ? devMode : npMode === 'dev');
 
   function showToast(msg: string) {
     setToast(msg);
@@ -63,14 +84,16 @@ export default function ProjectsHome({
     toastTimer.current = window.setTimeout(() => setToast(null), 2800);
   }
 
+  // Counts reflect remaining (not-done) work, so a project card shows what's left
+  // to do rather than its lifetime total.
   const counts = (id: string) => {
     let u = 0, b = 0;
-    cards.forEach((c) => { if (c.project_id === id) (c.type === 'bug' ? b++ : u++); });
+    cards.forEach((c) => { if (c.project_id === id && !c.done) (c.type === 'bug' ? b++ : u++); });
     return { u, b };
   };
 
   function openCreate() {
-    setNpName(''); setNpRepo(''); setNpVersion('');
+    setNpName(''); setNpRepo(''); setNpVersion(''); setNpMode('default');
     setNewOpen(true);
   }
   async function submitCreate() {
@@ -81,7 +104,8 @@ export default function ProjectsHome({
       name: npName.trim() || 'New project',
       repo_url: npRepo.trim(),
       versions: version ? [version] : [],
-      active_version: version
+      active_version: version,
+      dev_mode: modeToDev(npMode)
     };
     const { data, error } = await supabase.from('projects').insert(row).select().single();
     setBusy(false);
@@ -99,12 +123,15 @@ export default function ProjectsHome({
     if (error) { console.error('delete failed:', error); showToast('Could not delete — check your connection.'); }
   }
 
-  async function rename(id: string, name: string) {
-    const clean = name.trim() || 'Untitled';
-    setEditingId(null);
-    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name: clean } : p)));
-    const { error } = await supabase.from('projects').update({ name: clean }).eq('id', id);
-    if (error) { console.error('rename failed:', error); showToast('Could not rename — check your connection.'); }
+  async function saveEdit() {
+    if (!editProj) return;
+    const { id } = editProj;
+    const clean = editProj.name.trim() || 'Untitled';
+    const dev_mode = modeToDev(editProj.mode);
+    setEditProj(null);
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name: clean, dev_mode } : p)));
+    const { error } = await supabase.from('projects').update({ name: clean, dev_mode }).eq('id', id);
+    if (error) { console.error('save failed:', error); showToast('Could not save — check your connection.'); }
   }
 
   async function toggleFavorite(id: string, next: boolean) {
@@ -119,7 +146,8 @@ export default function ProjectsHome({
 
   const projectCard = (p: Project) => {
     const { u, b } = counts(p.id);
-    const meta = `${u} ${(u !== 1 ? v.updates : v.update).toLowerCase()}${b ? ` · ${b} ${(b !== 1 ? v.bugs : v.bug).toLowerCase()}` : ''}`;
+    const pv = vocab(p.dev_mode ?? devMode);
+    const meta = `${u} ${(u !== 1 ? pv.updates : pv.update).toLowerCase()}${b ? ` · ${b} ${(b !== 1 ? pv.bugs : pv.bug).toLowerCase()}` : ''}`;
     return (
       <div key={p.id} className="proj-card">
         <div className="proj-actions">
@@ -138,29 +166,19 @@ export default function ProjectsHome({
         </div>
         {menuId === p.id && (
           <div className="proj-menu" role="menu">
-            <button role="menuitem" onClick={() => { setEditingId(p.id); setMenuId(null); }}>
-              <svg viewBox="0 0 24 24"><path d="M12 20H21M3.00003 20H4.67457C5.16376 20 5.40835 20 5.63852 19.9447C5.84259 19.8957 6.03768 19.8149 6.21663 19.7053C6.41846 19.5816 6.59141 19.4086 6.93732 19.0627L19.5001 6.49998C20.3285 5.67156 20.3285 4.32841 19.5001 3.49998C18.6716 2.67156 17.3285 2.67156 16.5001 3.49998L3.93729 16.0627C3.59139 16.4086 3.41843 16.5816 3.29475 16.7834C3.18509 16.9624 3.10428 17.1574 3.05529 17.3615C3.00003 17.5917 3.00003 17.8363 3.00003 18.3255V20Z" /></svg> Rename
+            <button role="menuitem" onClick={() => { setEditProj({ id: p.id, name: p.name, mode: devToMode(p.dev_mode) }); setMenuId(null); }}>
+              <svg viewBox="0 0 24 24"><path d="M12 20H21M3.00003 20H4.67457C5.16376 20 5.40835 20 5.63852 19.9447C5.84259 19.8957 6.03768 19.8149 6.21663 19.7053C6.41846 19.5816 6.59141 19.4086 6.93732 19.0627L19.5001 6.49998C20.3285 5.67156 20.3285 4.32841 19.5001 3.49998C18.6716 2.67156 17.3285 2.67156 16.5001 3.49998L3.93729 16.0627C3.59139 16.4086 3.41843 16.5816 3.29475 16.7834C3.18509 16.9624 3.10428 17.1574 3.05529 17.3615C3.00003 17.5917 3.00003 17.8363 3.00003 18.3255V20Z" /></svg> Edit
             </button>
             <button role="menuitem" className="danger" onClick={() => { setConfirmDel({ id: p.id, name: p.name }); setDelText(''); setMenuId(null); }}>
               <svg viewBox="0 0 24 24"><path d="M9 3H15M3 6H21M19 6L18.2987 16.5193C18.1935 18.0975 18.1409 18.8867 17.8 19.485C17.4999 20.0118 17.0472 20.4353 16.5017 20.6997C15.882 21 15.0911 21 13.5093 21H10.4907C8.90891 21 8.11803 21 7.49834 20.6997C6.95276 20.4353 6.50009 20.0118 6.19998 19.485C5.85911 18.8867 5.8065 18.0975 5.70129 16.5193L5 6" /></svg> Delete
             </button>
           </div>
         )}
-        {editingId === p.id ? (
-          <div className="proj-open editing">
-            <span className={'proj-mark card-theme-' + versionTheme(p.name)}>{initials(p.name)}</span>
-            <input className="proj-rename" defaultValue={p.name} autoFocus spellCheck={false}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingId(null); }}
-              onBlur={(e) => rename(p.id, e.target.value)} />
-            <p className="proj-meta">{meta}</p>
-          </div>
-        ) : (
-          <a className="proj-open" href={`/board?p=${p.id}`}>
-            <span className={'proj-mark card-theme-' + versionTheme(p.name)}>{initials(p.name)}</span>
-            <h2 className="proj-name">{p.name || 'Untitled'}</h2>
-            <p className="proj-meta">{meta}</p>
-          </a>
-        )}
+        <a className="proj-open" href={`/board?p=${p.id}`}>
+          <span className={'proj-mark card-theme-' + versionTheme(p.name)}>{initials(p.name)}</span>
+          <h2 className="proj-name">{p.name || 'Untitled'}</h2>
+          <p className="proj-meta">{meta}</p>
+        </a>
       </div>
     );
   };
@@ -174,10 +192,7 @@ export default function ProjectsHome({
       <header className="home-top">
         <Logo height={22} className="brand-logo-full" />
         <div className="meta-spacer" />
-        <span className="user-email">{userEmail}</span>
-        <form action="/auth/signout" method="post">
-          <button className="btn signout" type="submit">Sign out</button>
-        </form>
+        <AccountMenu userEmail={userEmail} userName={userName} />
       </header>
 
       <div className="home-head">
@@ -219,14 +234,34 @@ export default function ProjectsHome({
             <input className="modal-form-input" spellCheck={false} inputMode="url" placeholder="https://github.com/org/repo" value={npRepo}
               onChange={(e) => setNpRepo(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setNewOpen(false); }} />
-            <label className="modal-form-label">First {v.version.toLowerCase()} <em>(optional)</em></label>
-            <input className="modal-form-input" spellCheck={false} placeholder={`e.g. ${v.versionExample}`} value={npVersion}
+            <label className="modal-form-label">First {npV.version.toLowerCase()} <em>(optional)</em></label>
+            <input className="modal-form-input" spellCheck={false} placeholder={`e.g. ${npV.versionExample}`} value={npVersion}
               onChange={(e) => setNpVersion(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setNewOpen(false); }} />
+            <label className="modal-form-label">Board mode</label>
+            <ModeSelect value={npMode} onChange={setNpMode} />
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setNewOpen(false)}>Cancel</button>
               <button className="btn solid" onClick={submitCreate} disabled={busy}>{busy ? 'Creating…' : 'Create'}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editProj && (
+        <Modal title="Edit project" className="modal-wide modal-center" onClose={() => setEditProj(null)}>
+          <div className="modal-form">
+            <label className="modal-form-label">Name</label>
+            <input className="modal-form-input" autoFocus spellCheck={false} value={editProj.name}
+              onChange={(e) => setEditProj({ ...editProj, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditProj(null); }} />
+            <label className="modal-form-label">Board mode</label>
+            <ModeSelect value={editProj.mode} onChange={(m) => setEditProj({ ...editProj, mode: m })} />
+            <div className="edit-actions">
+              <div className="meta-spacer" />
+              <button className="btn ghost" onClick={() => setEditProj(null)}>Cancel</button>
+              <button className="btn solid" onClick={saveEdit}>Save</button>
             </div>
           </div>
         </Modal>

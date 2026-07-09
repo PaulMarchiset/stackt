@@ -1,6 +1,6 @@
 'use client';
 
-import { useDevMode } from '@/lib/useDevMode';
+import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 
 /**
@@ -18,7 +18,7 @@ const URGENT_ICON = (
 );
 
 export default function TypeTag() {
-  const [devMode] = useDevMode();
+  const devMode = useBoardDevMode();
   const v = vocab(devMode);
   return <span className="chip bug">{devMode ? BUG_ICON : URGENT_ICON}{v.bug}</span>;
 }

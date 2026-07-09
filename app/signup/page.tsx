@@ -1,15 +1,15 @@
 import type { Metadata } from 'next';
 import Logo from '../Logo';
-import LoginForm from './LoginForm';
+import LoginForm from '../login/LoginForm';
 
-export const metadata: Metadata = { title: 'Sign in', robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: 'Create account', robots: { index: false, follow: false } };
 
-export default function LoginPage() {
+export default function SignupPage() {
   return (
     <main className="auth-screen">
       <div className="auth-card">
         <Logo height={28} className="auth-logo" />
-        <LoginForm />
+        <LoginForm mode="signup" />
       </div>
       <nav className="auth-legal">
         <a href="/legal">Legal notice</a>

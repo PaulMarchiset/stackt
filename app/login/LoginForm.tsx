@@ -58,29 +58,34 @@ function CodeBoxes({ value, onChange, onComplete }: {
   );
 }
 
-export default function LoginForm() {
+export default function LoginForm({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   const supabase = createClient();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [agreed, setAgreed] = useState(false);
 
   const redirectTo =
     typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
 
   async function sendCode(e: React.FormEvent) {
     e.preventDefault();
+    // The Terms checkbox only exists (and is required) when creating an account.
+    if (mode === 'signup' && !agreed) { setError('Please accept the Terms of Use and Privacy Policy to create an account.'); return; }
     setError('');
     setBusy(true);
+    // Sign in only reaches existing users; Create account provisions new ones.
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { shouldCreateUser: true }
+      options: { shouldCreateUser: mode === 'signup' }
     });
     setBusy(false);
     if (error) {
       console.error('signInWithOtp error:', error);
-      setError(error.message || "Couldn't send the code — check the email or SMTP config.");
+      if (mode === 'signin') setError('No account found for this email — switch to “Create account”.');
+      else setError(error.message || "Couldn't send the code — check the email or SMTP config.");
     } else {
       setStep('code');
     }
@@ -160,11 +165,26 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           className="auth-input"
         />
-        <button className="btn solid auth-submit" type="submit" disabled={busy}>
-          {busy ? 'Sending…' : 'Email me a code'}
+        {mode === 'signup' && (
+          <label className="auth-consent">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            <span>
+              By creating an account, I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a> and{' '}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </span>
+          </label>
+        )}
+        <button className="btn solid auth-submit" type="submit" disabled={busy || (mode === 'signup' && !agreed)}>
+          {busy ? 'Sending…' : mode === 'signup' ? 'Create account' : 'Email me a code'}
         </button>
       </form>
       {error && <p className="auth-error">{error}</p>}
+      <p className="auth-switch">
+        {mode === 'signup'
+          ? <>Already have an account? <a href="/login">Sign in</a></>
+          : <>New to Stackt? <a href="/signup">Create an account</a></>}
+      </p>
       </div>
     </>
   );

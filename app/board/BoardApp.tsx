@@ -14,6 +14,9 @@ import Sheet from '@/app/components/Sheet';
 import BranchChip from '@/app/components/BranchChip';
 import TypeTag from '@/app/components/TypeTag';
 import WhatsNew from '@/app/components/WhatsNew';
+import AccountMenu from '@/app/components/AccountMenu';
+import NotifBell from '@/app/components/NotifBell';
+import { BoardDevModeContext } from '@/lib/devModeContext';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 import Logo from '../Logo';
@@ -24,15 +27,13 @@ type EditTarget = string | null; // card id, or `__new__:status`, or null
 type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: string } | null;
 
 export default function BoardApp({
-  initialProjects, initialCards, userEmail, initialActiveId
+  initialProjects, initialCards, userEmail, userName = '', initialActiveId
 }: {
-  initialProjects: Project[]; initialCards: Card[]; userEmail: string; initialActiveId?: string | null;
+  initialProjects: Project[]; initialCards: Card[]; userEmail: string; userName?: string; initialActiveId?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const isMobile = useIsMobile();
-  const [devMode, setDevMode] = useDevMode();
-  const v = vocab(devMode);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [defaultDevMode] = useDevMode();
 
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
@@ -77,6 +78,16 @@ export default function BoardApp({
     [cards, project]
   );
 
+  // Effective developer mode for the open board: the project's own choice if it
+  // set one, otherwise the device-wide default.
+  const devMode = project?.dev_mode ?? defaultDevMode;
+  const v = vocab(devMode);
+
+  // Latest projects order, for reads inside drag handlers (avoids stale closures).
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+  const dragProj = useRef<string | null>(null);
+
   function showToast(msg: string, err = false) {
     setToast({ msg, err });
     window.clearTimeout(toastTimer.current);
@@ -97,6 +108,32 @@ export default function BoardApp({
   }
   function openRepoEdit() { setRepoDraft(project?.repo_url || ''); setRepoEdit(true); }
   function saveRepo() { if (project) patchProject(project.id, { repo_url: repoDraft.trim() }); setRepoEdit(false); }
+  /* Drag-to-reorder the header project tabs; positions persist so the order sticks. */
+  function onProjDragOver(overId: string) {
+    const from = dragProj.current;
+    if (!from || from === overId) return;
+    setProjects((ps) => {
+      const fi = ps.findIndex((p) => p.id === from);
+      const ti = ps.findIndex((p) => p.id === overId);
+      if (fi < 0 || ti < 0 || fi === ti) return ps;
+      const arr = [...ps];
+      const [moved] = arr.splice(fi, 1);
+      arr.splice(ti, 0, moved);
+      return arr;
+    });
+  }
+  function onProjDrop() {
+    dragProj.current = null;
+    const arr = projectsRef.current;
+    let dirty = false;
+    arr.forEach((p, i) => {
+      if (p.position !== i) { dirty = true; void persist(supabase.from('projects').update({ position: i }).eq('id', p.id)); }
+    });
+    if (dirty) setProjects((ps) => ps.map((p) => {
+      const i = arr.findIndex((x) => x.id === p.id);
+      return p.position === i ? p : { ...p, position: i };
+    }));
+  }
   /* ---------- Card ops ---------- */
   async function addCard(values: Partial<Card>, status: Status) {
     if (!project) return;
@@ -236,9 +273,14 @@ export default function BoardApp({
       <div className="projects" role="tablist">
         {projects.map((p) => (
           <button key={p.id} className={'tab' + (p.id === activeId ? ' active' : '')}
+            draggable
+            onDragStart={(e) => { dragProj.current = p.id; e.dataTransfer.effectAllowed = 'move'; }}
+            onDragOver={(e) => { e.preventDefault(); onProjDragOver(p.id); }}
+            onDrop={(e) => { e.preventDefault(); onProjDrop(); }}
+            onDragEnd={onProjDrop}
             onClick={() => { setActiveId(p.id); setEditing(null); }}>
             {p.name || 'Untitled'}
-            <span className="count">{cards.filter((c) => c.project_id === p.id).length}</span>
+            <span className="count">{cards.filter((c) => c.project_id === p.id && !c.done).length}</span>
           </button>
         ))}
       </div>
@@ -252,15 +294,8 @@ export default function BoardApp({
           </button>
         </div>
         {renderRepoButton()}
-        <button className="btn ghost icon-only" title="Settings" onClick={() => setSettingsOpen(true)}>
-          <svg viewBox="0 0 24 24" className="ic"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-        </button>
-        <a className="btn ghost" href="/projects" title="All projects">
-          <svg viewBox="0 0 24 24" className="ic"><path d="M8.4 3H4.6C4.03995 3 3.75992 3 3.54601 3.10899C3.35785 3.20487 3.20487 3.35785 3.10899 3.54601C3 3.75992 3 4.03995 3 4.6V8.4C3 8.96005 3 9.24008 3.10899 9.45399C3.20487 9.64215 3.35785 9.79513 3.54601 9.89101C3.75992 10 4.03995 10 4.6 10H8.4C8.96005 10 9.24008 10 9.45399 9.89101C9.64215 9.79513 9.79513 9.64215 9.89101 9.45399C10 9.24008 10 8.96005 10 8.4V4.6C10 4.03995 10 3.75992 9.89101 3.54601C9.79513 3.35785 9.64215 3.20487 9.45399 3.10899C9.24008 3 8.96005 3 8.4 3Z" /><path d="M19.4 3H15.6C15.0399 3 14.7599 3 14.546 3.10899C14.3578 3.20487 14.2049 3.35785 14.109 3.54601C14 3.75992 14 4.03995 14 4.6V8.4C14 8.96005 14 9.24008 14.109 9.45399C14.2049 9.64215 14.3578 9.79513 14.546 9.89101C14.7599 10 15.0399 10 15.6 10H19.4C19.9601 10 20.2401 10 20.454 9.89101C20.6422 9.79513 20.7951 9.64215 20.891 9.45399C21 9.24008 21 8.96005 21 8.4V4.6C21 4.03995 21 3.75992 20.891 3.54601C20.7951 3.35785 20.6422 3.20487 20.454 3.10899C20.2401 3 19.9601 3 19.4 3Z" /><path d="M19.4 14H15.6C15.0399 14 14.7599 14 14.546 14.109C14.3578 14.2049 14.2049 14.3578 14.109 14.546C14 14.7599 14 15.0399 14 15.6V19.4C14 19.9601 14 20.2401 14.109 20.454C14.2049 20.6422 14.3578 20.7951 14.546 20.891C14.7599 21 15.0399 21 15.6 21H19.4C19.9601 21 20.2401 21 20.454 20.891C20.6422 20.7951 20.7951 20.6422 20.891 20.454C21 20.2401 21 19.9601 21 19.4V15.6C21 15.0399 21 14.7599 20.891 14.546C20.7951 14.3578 20.6422 14.2049 20.454 14.109C20.2401 14 19.9601 14 19.4 14Z" /><path d="M8.4 14H4.6C4.03995 14 3.75992 14 3.54601 14.109C3.35785 14.2049 3.20487 14.3578 3.10899 14.546C3 14.7599 3 15.0399 3 15.6V19.4C3 19.9601 3 20.2401 3.10899 20.454C3.20487 20.6422 3.35785 20.7951 3.54601 20.891C3.75992 21 4.03995 21 4.6 21H8.4C8.96005 21 9.24008 21 9.45399 20.891C9.64215 20.7951 9.79513 20.6422 9.89101 20.454C10 20.2401 10 19.9601 10 19.4V15.6C10 15.0399 10 14.7599 9.89101 14.546C9.79513 14.3578 9.64215 14.2049 9.45399 14.109C9.24008 14 8.96005 14 8.4 14Z" /></svg> Projects
-        </a>
-        <form action="/auth/signout" method="post">
-          <button className="btn signout" type="submit">Sign out</button>
-        </form>
+        <NotifBell align="right" />
+        <AccountMenu userEmail={userEmail} userName={userName} />
       </div>
     </header>
   );
@@ -273,6 +308,7 @@ export default function BoardApp({
         <a className="brand" href="/projects" title="All projects">
           <Logo height={20} className="brand-logo-full" />
         </a>
+        <NotifBell btnClass="icon-btn" />
         <span className={'save-state ' + (saving === 'saving' ? 'saving' : saving === 'error' ? 'error' : '')}>
           {saving === 'saving' ? 'saving…' : saving === 'error' ? '!' : ''}
         </span>
@@ -316,7 +352,7 @@ export default function BoardApp({
 
   const renderVersionChip = (v: string) => {
     if (!project) return null;
-    const count = projCards.filter((c) => c.version === v).length;
+    const count = projCards.filter((c) => c.version === v && !c.done).length;
     const completed = isVersionCompleted(project, v);
     const ci = versionColorIndex(project, v) ?? 0;
     const active = project.active_version || '';
@@ -401,7 +437,7 @@ export default function BoardApp({
   const active = project.active_version || '';
   const openV = versions.filter((v) => !isVersionCompleted(project, v));
   const doneV = versions.filter((v) => isVersionCompleted(project, v));
-  const bugCount = projCards.filter((c) => c.type === 'bug').length;
+  const bugCount = projCards.filter((c) => c.type === 'bug' && !c.done).length;
   const inScope = (c: Card) => (!active || c.version === active) && (typeFilter === 'all' || c.type === typeFilter);
   const scopedCards = projCards.filter(inScope);
 
@@ -444,6 +480,7 @@ export default function BoardApp({
     ? projCards.find((c) => c.id === editing) : null;
 
   return (
+    <BoardDevModeContext.Provider value={devMode}>
     <div className="app">
       {isMobile ? renderMobileTopbar() : renderTopbar()}
 
@@ -461,7 +498,7 @@ export default function BoardApp({
       <div className="version-bar">
         <button className={'vchip' + (active === '' ? ' active' : '')} onClick={() => setActiveVersion('')}>
           <span className="vlabel">{`All ${v.versions.toLowerCase()}`}</span>
-          <span className="vcount">{projCards.length}</span>
+          <span className="vcount">{projCards.filter((c) => !c.done).length}</span>
         </button>
 
         {openV.map(renderVersionChip)}
@@ -620,21 +657,6 @@ export default function BoardApp({
         </Modal>
       )}
 
-      {settingsOpen && (
-        <Modal title="Settings" className="modal-wide modal-center" onClose={() => setSettingsOpen(false)}>
-          <div className="settings-list">
-            <div className="setting-row">
-              <div className="setting-text">
-                <div className="setting-title">Developer mode</div>
-                <div className="setting-desc">Show the git repository button and branch fields.</div>
-              </div>
-              <button className={'switch' + (devMode ? ' on' : '')} role="switch" aria-checked={devMode}
-                aria-label="Developer mode" onClick={() => setDevMode(!devMode)}><span /></button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {delVerConfirm && (
         <Modal title={`Delete ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setDelVerConfirm(null)}>
           <div className="modal-form">
@@ -664,7 +686,7 @@ export default function BoardApp({
               <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
                 onClick={() => { setActiveId(p.id); setEditing(null); setSheet(null); }}>
                 {p.name || 'Untitled'}
-                <span className="count">{cards.filter((c) => c.project_id === p.id).length}</span>
+                <span className="count">{cards.filter((c) => c.project_id === p.id && !c.done).length}</span>
               </button>
             ))}
           </div>
@@ -675,7 +697,7 @@ export default function BoardApp({
       {sheet?.kind === 'menu' && (
         <Sheet title="Menu" onClose={() => setSheet(null)}>
           <a className="sheet-item link" href="/projects">All projects</a>
-          <button className="sheet-item" onClick={() => { setSettingsOpen(true); setSheet(null); }}>Settings</button>
+          <a className="sheet-item link" href="/settings">Settings</a>
           <form action="/auth/signout" method="post">
             <button className="sheet-item danger" type="submit">Sign out</button>
           </form>
@@ -745,6 +767,7 @@ export default function BoardApp({
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
       <WhatsNew />
     </div>
+    </BoardDevModeContext.Provider>
   );
 }
 

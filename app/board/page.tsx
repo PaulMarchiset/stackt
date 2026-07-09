@@ -28,6 +28,7 @@ export default async function BoardPage({
       initialProjects={(projects ?? []) as Project[]}
       initialCards={(cards ?? []) as Card[]}
       userEmail={user.email ?? ''}
+      userName={(user.user_metadata?.username as string) ?? ''}
       initialActiveId={searchParams.p ?? null}
     />
   );

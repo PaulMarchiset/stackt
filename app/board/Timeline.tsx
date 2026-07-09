@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Card, Project } from '@/lib/types';
 import { todayISO, versionColorIndex } from '@/lib/util';
-import { useDevMode } from '@/lib/useDevMode';
+import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
 import TypeTag from '@/app/components/TypeTag';
@@ -36,7 +36,7 @@ export default function Timeline({
   onSubmit: (v: Partial<Card>) => void;
   onCancel: () => void;
 }) {
-  const [devMode] = useDevMode();
+  const devMode = useBoardDevMode();
   const v = vocab(devMode);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hiRef = useRef<HTMLElement | null>(null);

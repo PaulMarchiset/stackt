@@ -9,7 +9,7 @@ export default async function Landing() {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  const ctaHref = user ? '/projects' : '/login';
+  const ctaHref = user ? '/projects' : '/signup';
   const ctaLabel = user ? 'Open your projects' : 'Get started — free';
 
   const faqs: { q: string; a: string }[] = [
@@ -65,7 +65,7 @@ export default async function Landing() {
         ) : (
           <>
             <Link className="btn ghost" href="/login">Sign in</Link>
-            <Link className="btn solid" href="/login">Get started</Link>
+            <Link className="btn solid" href="/signup">Get started</Link>
           </>
         )}
       </header>
@@ -127,6 +127,11 @@ export default async function Landing() {
             <Logo height={18} className="brand-logo-full" />
             <span>Plan and track your updates.</span>
           </div>
+          <nav className="lp-footer-legal">
+            <Link href="/legal">Legal notice</Link>
+            <Link href="/terms">Terms of Use</Link>
+            <Link href="/privacy">Privacy Policy</Link>
+          </nav>
           <a className="lp-footer-made" href="https://paulmarchiset.me" target="_blank" rel="noreferrer">
             Made by <strong>Paul Marchiset</strong>
           </a>

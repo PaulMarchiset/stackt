@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card, CardType, Project, Status } from '@/lib/types';
 import { isVersionCompleted, projectVersions, suggestNextVersion, versionColorIndex } from '@/lib/util';
-import { useDevMode } from '@/lib/useDevMode';
+import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import DateField from './DateField';
 
@@ -14,7 +14,7 @@ export default function CardEditor({
   defaultType?: CardType; defaultDate?: string; bare?: boolean;
   onSubmit: (v: Partial<Card>) => void; onCancel: () => void;
 }) {
-  const [devMode] = useDevMode();
+  const devMode = useBoardDevMode();
   const v = vocab(devMode);
   const [title, setTitle] = useState(card?.title ?? '');
   const [comment, setComment] = useState(card?.comment ?? '');

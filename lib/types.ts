@@ -26,6 +26,7 @@ export interface Project {
   favorite: boolean;
   repo_url: string; // base URL of the git repository (optional; '' when unset)
   position: number;
+  dev_mode: boolean | null; // per-project override of developer mode; null = follow the device default
 }
 
 export interface BoardData {

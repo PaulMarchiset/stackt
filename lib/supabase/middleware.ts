@@ -29,7 +29,9 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isPublic = path === '/' || path.startsWith('/login') || path.startsWith('/auth');
+  const isAuthPage = path.startsWith('/login') || path.startsWith('/signup');
+  const isPublic = path === '/' || isAuthPage || path.startsWith('/auth')
+    || path.startsWith('/terms') || path.startsWith('/privacy') || path.startsWith('/legal');
 
   // Not signed in and trying to reach the app → send to login.
   if (!user && !isPublic) {
@@ -37,8 +39,8 @@ export async function updateSession(request: NextRequest) {
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
-  // Already signed in and on the login page → send to the home (projects).
-  if (user && path.startsWith('/login')) {
+  // Already signed in and on an auth page → send to the home (projects).
+  if (user && isAuthPage) {
     const url = request.nextUrl.clone();
     url.pathname = '/projects';
     return NextResponse.redirect(url);

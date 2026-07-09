@@ -16,7 +16,7 @@ export default async function ProjectsPage() {
 
   const [{ data: projects }, { data: cards }] = await Promise.all([
     supabase.from('projects').select('*').order('position').order('created_at'),
-    supabase.from('cards').select('id, project_id, type')
+    supabase.from('cards').select('id, project_id, type, done')
   ]);
 
   return (
@@ -24,6 +24,7 @@ export default async function ProjectsPage() {
       initialProjects={(projects ?? []) as Project[]}
       cards={(cards ?? []) as CardLite[]}
       userEmail={user.email ?? ''}
+      userName={(user.user_metadata?.username as string) ?? ''}
     />
   );
 }

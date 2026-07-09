@@ -1,7 +1,7 @@
 'use client';
 
 import { branchUrl } from '@/lib/util';
-import { useDevMode } from '@/lib/useDevMode';
+import { useBoardDevMode } from '@/lib/devModeContext';
 
 /**
  * A small git-branch chip. When the project has a repo URL, it links to the
@@ -10,7 +10,7 @@ import { useDevMode } from '@/lib/useDevMode';
  * click/double-click handlers from firing when the link is tapped.
  */
 export default function BranchChip({ repoUrl, branch }: { repoUrl: string; branch: string }) {
-  const [devMode] = useDevMode();
+  const devMode = useBoardDevMode();
   const b = (branch || '').trim();
   if (!devMode || !b) return null;
   const url = branchUrl(repoUrl, b);
