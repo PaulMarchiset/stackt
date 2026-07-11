@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { COLUMNS, PALETTE, type Card, type CardType, type Project, type Status } from '@/lib/types';
+import { COLUMNS, PALETTE, type Card, type CardDraft, type CardType, type Project, type Status, type Version } from '@/lib/types';
 import {
-  dateClass, formatDateRange, isVersionCompleted, projectVersions, repoLabel, sortCards,
-  suggestNextVersion, versionColorIndex
+  dateClass, formatDateRange, repoLabel, sortCards,
+  sortVersions, suggestNextVersion, versionColor
 } from '@/lib/util';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { useDevMode } from '@/lib/useDevMode';
@@ -27,9 +27,10 @@ type EditTarget = string | null; // card id, or `__new__:status`, or null
 type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: string } | null;
 
 export default function BoardApp({
-  initialProjects, initialCards, userEmail, userName = '', initialActiveId
+  initialProjects, initialCards, initialVersions, userEmail, userName = '', initialActiveId
 }: {
-  initialProjects: Project[]; initialCards: Card[]; userEmail: string; userName?: string; initialActiveId?: string | null;
+  initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
+  userEmail: string; userName?: string; initialActiveId?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const isMobile = useIsMobile();
@@ -37,6 +38,7 @@ export default function BoardApp({
 
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
+  const [versions, setVersions] = useState<Version[]>(initialVersions);
   const firstActive = (initialActiveId && initialProjects.some((p) => p.id === initialActiveId))
     ? initialActiveId : initialProjects[0]?.id ?? null;
   const [activeId, setActiveId] = useState<string | null>(firstActive);
@@ -47,7 +49,7 @@ export default function BoardApp({
   const [typeFilter, setTypeFilter] = useState<'all' | 'update' | 'bug'>('all');
   const [showCompleted, setShowCompleted] = useState(false);
   const [justMoved, setJustMoved] = useState<string | null>(null);
-  const [colorPop, setColorPop] = useState<{ v: string; x: number; y: number } | null>(null);
+  const [colorPop, setColorPop] = useState<{ id: string; x: number; y: number } | null>(null);
   const [saving, setSaving] = useState<'saved' | 'saving' | 'error'>('saved');
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const toastTimer = useRef<number>(0);
@@ -59,8 +61,8 @@ export default function BoardApp({
   const [repoDraft, setRepoDraft] = useState('');
   const [addVerOpen, setAddVerOpen] = useState(false);
   const [verDraft, setVerDraft] = useState('');
-  const [mergeConfirm, setMergeConfirm] = useState<{ from: string; to: string } | null>(null);
-  const [delVerConfirm, setDelVerConfirm] = useState<string | null>(null);
+  const [mergeConfirm, setMergeConfirm] = useState<{ fromId: string; fromName: string; toName: string } | null>(null);
+  const [delVerConfirm, setDelVerConfirm] = useState<{ id: string; name: string } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const [activeCol, setActiveCol] = useState(0);
   const onBoardScroll = () => {
@@ -77,6 +79,13 @@ export default function BoardApp({
     () => (project ? cards.filter((c) => c.project_id === project.id) : []),
     [cards, project]
   );
+  // This project's versions in display order, and a quick id → version lookup.
+  const projVersions = useMemo(
+    () => (project ? sortVersions(versions.filter((z) => z.project_id === project.id)) : []),
+    [versions, project]
+  );
+  const versionById = useMemo(() => new Map(versions.map((z) => [z.id, z] as const)), [versions]);
+  const versionName = (id: string | null | undefined) => (id ? versionById.get(id)?.name ?? '' : '');
 
   // Effective developer mode for the open board: the project's own choice if it
   // set one, otherwise the device-wide default.
@@ -138,7 +147,7 @@ export default function BoardApp({
   async function addCard(values: Partial<Card>, status: Status) {
     if (!project) return;
     const row = {
-      project_id: project.id, title: values.title ?? '', comment: values.comment ?? '', version: values.version ?? '',
+      project_id: project.id, title: values.title ?? '', comment: values.comment ?? '', version_id: values.version_id ?? null,
       target_date: values.target_date ?? null, end_date: values.end_date ?? null,
       status, done: status === 'done', type: values.type ?? 'update', branch: values.branch ?? ''
     };
@@ -171,83 +180,97 @@ export default function BoardApp({
     patchCard(id, { done, status });
   }
 
-  /* ---------- Version ops ---------- */
-  function setActiveVersion(v: string) { if (project) { setEditing(null); patchProject(project.id, { active_version: v }); } }
+  /* ---------- Version ops (the versions table is the source of truth) ---------- */
+  function setActiveVersion(id: string | null) {
+    if (project) { setEditing(null); patchProject(project.id, { active_version_id: id }); }
+  }
   function openAddVersion() {
     if (!project) return;
-    setVerDraft(devMode ? suggestNextVersion(projectVersions(project, projCards)) : '');
+    setVerDraft(devMode ? suggestNextVersion(projVersions.map((z) => z.name)) : '');
     setAddVerOpen(true);
+  }
+  /* Find an existing version by name (in this project) or create the row. */
+  async function ensureVersion(name: string): Promise<Version | null> {
+    if (!project) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = projVersions.find((z) => z.name === trimmed);
+    if (existing) return existing;
+    const position = projVersions.reduce((m, z) => Math.max(m, z.position), -1) + 1;
+    setSaving('saving');
+    const { data, error } = await supabase.from('versions')
+      .insert({ project_id: project.id, name: trimmed, position }).select().single();
+    if (error || !data) { setSaving('error'); showToast('Could not add version', true); return null; }
+    setSaving('saved');
+    const ver = data as Version;
+    setVersions((vs) => [...vs, ver]);
+    return ver;
   }
   function confirmAddVersion() {
     if (!project) return;
     const label = verDraft.trim();
     if (!label) return;
-    const versions = project.versions.includes(label) ? project.versions : [...project.versions, label];
-    patchProject(project.id, { versions, active_version: label });
     setAddVerOpen(false);
     setEditing(null);
+    void ensureVersion(label).then((ver) => { if (ver) setActiveVersion(ver.id); });
   }
-  function removeVersion(v: string) {
+  /* Delete a version: its cards are kept (the FK sets their version_id → null). */
+  function deleteVersion(id: string) {
     if (!project) return;
-    const colors = { ...project.version_colors };
-    delete colors[v];
-    patchProject(project.id, {
-      versions: project.versions.filter((z) => z !== v),
-      completed_versions: project.completed_versions.filter((z) => z !== v),
-      version_colors: colors,
-      active_version: project.active_version === v ? '' : project.active_version
-    });
+    setCards((cs) => cs.map((c) => (c.version_id === id ? { ...c, version_id: null } : c)));
+    setVersions((vs) => vs.filter((z) => z.id !== id));
+    if (project.active_version_id === id) patchProject(project.id, { active_version_id: null });
+    void persist(supabase.from('versions').delete().eq('id', id));
+    setColorPop(null);
   }
-  /* Rename a version everywhere: project metadata + every card carrying the old label.
-     If newV already exists this becomes a MERGE (cards move onto it, oldV disappears). */
-  function renameVersion(oldV: string, raw: string) {
+  /* Rename a version. If the new name already exists, this MERGES: the version's
+     cards move onto the target and the old row is deleted. */
+  function renameVersion(id: string, raw: string) {
     if (!project) return;
+    const ver = versions.find((z) => z.id === id);
     const newV = raw.trim();
-    if (!newV || newV === oldV) return;
-    const uniq = (arr: string[]) => Array.from(new Set(arr));
-    const colors = { ...project.version_colors };
-    const hasOld = Object.prototype.hasOwnProperty.call(colors, oldV);
-    const hasNew = Object.prototype.hasOwnProperty.call(colors, newV);
-    if (hasOld) {
-      if (!hasNew) colors[newV] = colors[oldV]; // rename carries the color; merge keeps the target's
-      delete colors[oldV];
+    if (!ver || !newV || newV === ver.name) return;
+    const target = projVersions.find((z) => z.name === newV && z.id !== id);
+    if (target) {
+      setCards((cs) => cs.map((c) => (c.version_id === id ? { ...c, version_id: target.id } : c)));
+      void persist(supabase.from('cards').update({ version_id: target.id }).eq('version_id', id));
+      setVersions((vs) => vs.filter((z) => z.id !== id));
+      if (project.active_version_id === id) patchProject(project.id, { active_version_id: target.id });
+      void persist(supabase.from('versions').delete().eq('id', id));
+    } else {
+      setVersions((vs) => vs.map((z) => (z.id === id ? { ...z, name: newV } : z)));
+      void persist(supabase.from('versions').update({ name: newV }).eq('id', id));
     }
-    patchProject(project.id, {
-      versions: uniq(project.versions.map((z) => (z === oldV ? newV : z))),
-      completed_versions: uniq(project.completed_versions.map((z) => (z === oldV ? newV : z))),
-      version_colors: colors,
-      active_version: project.active_version === oldV ? newV : project.active_version
-    });
-    setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === oldV ? { ...c, version: newV } : c)));
-    void persist(supabase.from('cards').update({ version: newV }).eq('project_id', project.id).eq('version', oldV));
     setColorPop(null);
   }
-  /* Delete a version: drop it from the project and unversion (keep) any cards that used it. */
-  function deleteVersion(v: string) {
-    if (!project) return;
-    removeVersion(v);
-    setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === v ? { ...c, version: '' } : c)));
-    void persist(supabase.from('cards').update({ version: '' }).eq('project_id', project.id).eq('version', v));
+  function setVersionColor(id: string, idx: number) {
+    setVersions((vs) => vs.map((z) => (z.id === id ? { ...z, color_index: idx } : z)));
+    void persist(supabase.from('versions').update({ color_index: idx }).eq('id', id));
     setColorPop(null);
   }
-  function setVersionColor(v: string, idx: number) {
+  function toggleCompleted(id: string) {
     if (!project) return;
-    patchProject(project.id, { version_colors: { ...project.version_colors, [v]: idx } });
-    setColorPop(null);
-  }
-  function toggleCompleted(v: string) {
-    if (!project) return;
-    const has = project.completed_versions.includes(v);
-    patchProject(project.id, {
-      completed_versions: has ? project.completed_versions.filter((z) => z !== v) : [...project.completed_versions, v],
-      active_version: !has && project.active_version === v ? '' : project.active_version
-    });
+    const ver = versions.find((z) => z.id === id);
+    if (!ver) return;
+    const completed = !ver.completed;
+    setVersions((vs) => vs.map((z) => (z.id === id ? { ...z, completed } : z)));
+    void persist(supabase.from('versions').update({ completed }).eq('id', id));
+    if (completed && project.active_version_id === id) patchProject(project.id, { active_version_id: null });
     // Completing a version closes whatever's left in it (its unfinished cards → done).
-    if (!has) {
-      setCards((cs) => cs.map((c) => (c.project_id === project.id && c.version === v && !c.done ? { ...c, done: true, status: 'done' } : c)));
-      void persist(supabase.from('cards').update({ done: true, status: 'done' }).eq('project_id', project.id).eq('version', v).eq('done', false));
+    if (completed) {
+      setCards((cs) => cs.map((c) => (c.version_id === id && !c.done ? { ...c, done: true, status: 'done' } : c)));
+      void persist(supabase.from('cards').update({ done: true, status: 'done' }).eq('version_id', id).eq('done', false));
     }
     setColorPop(null);
+  }
+  /* Card-editor submissions carry a version *name*; resolve it to an id (creating
+     the version if the user typed a new one) before writing the card. */
+  async function submitCard(vals: CardDraft, target: { kind: 'new'; status: Status } | { kind: 'edit'; id: string }) {
+    const ver = await ensureVersion(vals.versionName ?? '');
+    const payload: CardDraft = { ...vals, version_id: ver?.id ?? null };
+    delete payload.versionName;
+    if (target.kind === 'new') await addCard(payload, target.status);
+    else patchCard(target.id, payload);
   }
 
   // Close color popover on outside click / Escape.
@@ -294,7 +317,8 @@ export default function BoardApp({
           </button>
         </div>
         {renderRepoButton()}
-        <NotifBell align="right" />
+        <NotifBell align="right" projectName={project?.name} remind={!!project?.remind}
+          onToggleRemind={project ? (next) => patchProject(project.id, { remind: next }) : undefined} />
         <AccountMenu userEmail={userEmail} userName={userName} />
       </div>
     </header>
@@ -308,7 +332,8 @@ export default function BoardApp({
         <a className="brand" href="/projects" title="All projects">
           <Logo height={20} className="brand-logo-full" />
         </a>
-        <NotifBell btnClass="icon-btn" />
+        <NotifBell btnClass="icon-btn" projectName={project?.name} remind={!!project?.remind}
+          onToggleRemind={project ? (next) => patchProject(project.id, { remind: next }) : undefined} />
         <span className={'save-state ' + (saving === 'saving' ? 'saving' : saving === 'error' ? 'error' : '')}>
           {saving === 'saving' ? 'saving…' : saving === 'error' ? '!' : ''}
         </span>
@@ -350,23 +375,22 @@ export default function BoardApp({
     </button>
   );
 
-  const renderVersionChip = (v: string) => {
+  const renderVersionChip = (ver: Version) => {
     if (!project) return null;
-    const count = projCards.filter((c) => c.version === v && !c.done).length;
-    const completed = isVersionCompleted(project, v);
-    const ci = versionColorIndex(project, v) ?? 0;
-    const active = project.active_version || '';
+    const count = projCards.filter((c) => c.version_id === ver.id && !c.done).length;
+    const ci = versionColor(ver) ?? 0;
+    const active = project.active_version_id;
     return (
-      <button key={v} className={'vchip vchip-ver card-theme-' + ci + (v === active ? ' active' : '') + (completed ? ' completed' : '')}
-        onClick={() => setActiveVersion(v)}>
-        {completed && <span className="vcheck"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg></span>}
-        <span className="vlabel">{v}</span>
+      <button key={ver.id} className={'vchip vchip-ver card-theme-' + ci + (ver.id === active ? ' active' : '') + (ver.completed ? ' completed' : '')}
+        onClick={() => setActiveVersion(ver.id)}>
+        {ver.completed && <span className="vcheck"><svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg></span>}
+        <span className="vlabel">{ver.name}</span>
         <span className="vcount">{count}</span>
         <span className="vopts" title="Color & options"
           onClick={(e) => {
             e.stopPropagation();
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setColorPop({ v, x: Math.max(12, r.right + window.scrollX - 176), y: r.bottom + 8 + window.scrollY });
+            setColorPop({ id: ver.id, x: Math.max(12, r.right + window.scrollX - 176), y: r.bottom + 8 + window.scrollY });
           }}>
           <svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg>
         </span>
@@ -376,7 +400,8 @@ export default function BoardApp({
 
   const renderCard = (card: Card, index: number) => {
     if (!project) return null;
-    const ci = versionColorIndex(project, card.version);
+    const ver = card.version_id ? versionById.get(card.version_id) : null;
+    const ci = versionColor(ver);
     const dcls = dateClass(card);
     const cls = 'card' + (ci != null ? ' card-theme-' + ci : '') +
       (card.type === 'bug' ? ' is-bug' : '') + (card.done ? ' done' : '') + (card.id === justMoved ? ' dropped' : '');
@@ -412,7 +437,7 @@ export default function BoardApp({
         {card.comment && <div className="card-comment">{card.comment}</div>}
         <div className="card-meta">
           {card.type === 'bug' && <TypeTag />}
-          {card.version && <span className="chip version">{card.version}</span>}
+          {ver && <span className="chip version">{ver.name}</span>}
           <span className={'date ' + dcls}>
             <svg viewBox="0 0 24 24"><path d="M21 10H3M16 2V6M8 2V6M7.8 22H16.2C17.8802 22 18.7202 22 19.362 21.673C19.9265 21.3854 20.3854 20.9265 20.673 20.362C21 19.7202 21 18.8802 21 17.2V8.8C21 7.11984 21 6.27976 20.673 5.63803C20.3854 5.07354 19.9265 4.6146 19.362 4.32698C18.7202 4 17.8802 4 16.2 4H7.8C6.11984 4 5.27976 4 4.63803 4.32698C4.07354 4.6146 3.6146 5.07354 3.32698 5.63803C3 6.27976 3 7.11984 3 8.8V17.2C3 18.8802 3 19.7202 3.32698 20.362C3.6146 20.9265 4.07354 21.3854 4.63803 21.673C5.27976 22 6.11984 22 7.8 22Z" /></svg>
             {formatDateRange(card.target_date, card.end_date)}
@@ -433,18 +458,18 @@ export default function BoardApp({
     );
   }
 
-  const versions = projectVersions(project, projCards);
-  const active = project.active_version || '';
-  const openV = versions.filter((v) => !isVersionCompleted(project, v));
-  const doneV = versions.filter((v) => isVersionCompleted(project, v));
+  const active = project.active_version_id;
+  const activeVer = active ? versionById.get(active) ?? null : null;
+  const openV = projVersions.filter((z) => !z.completed);
+  const doneV = projVersions.filter((z) => z.completed);
   const bugCount = projCards.filter((c) => c.type === 'bug' && !c.done).length;
-  const inScope = (c: Card) => (!active || c.version === active) && (typeFilter === 'all' || c.type === typeFilter);
+  const inScope = (c: Card) => (!active || c.version_id === active) && (typeFilter === 'all' || c.type === typeFilter);
   const scopedCards = projCards.filter(inScope);
 
   // Timeline (desktop) and Agenda (mobile) share the same prop contract.
   const TimelineView = isMobile ? Agenda : Timeline;
   const timelineProps = {
-    project, projCards, cards: scopedCards,
+    project, projCards, versions: projVersions, cards: scopedCards,
     editing, newCardDate,
     onAdd: (date: string) => { setNewCardType('update'); setNewCardDate(date); setEditing('__new__:todo'); },
     onEdit: (id: string) => setEditing(id),
@@ -465,9 +490,9 @@ export default function BoardApp({
       }
       patchCard(id, { target_date: nd, end_date: end });
     },
-    onSubmit: (vals: Partial<Card>) => {
-      if (editing && editing.startsWith('__new__')) void addCard(vals, 'todo');
-      else if (editing) patchCard(editing, vals);
+    onSubmit: (vals: CardDraft) => {
+      if (editing && editing.startsWith('__new__')) void submitCard(vals, { kind: 'new', status: 'todo' });
+      else if (editing) void submitCard(vals, { kind: 'edit', id: editing });
       setEditing(null);
     },
     onCancel: () => setEditing(null)
@@ -496,7 +521,7 @@ export default function BoardApp({
       </div>
 
       <div className="version-bar">
-        <button className={'vchip' + (active === '' ? ' active' : '')} onClick={() => setActiveVersion('')}>
+        <button className={'vchip' + (active === null ? ' active' : '')} onClick={() => setActiveVersion(null)}>
           <span className="vlabel">{`All ${v.versions.toLowerCase()}`}</span>
           <span className="vcount">{projCards.filter((c) => !c.done).length}</span>
         </button>
@@ -510,7 +535,7 @@ export default function BoardApp({
           </>
         ) : (
           <>
-            {active && doneV.includes(active) && renderVersionChip(active)}
+            {activeVer && activeVer.completed && renderVersionChip(activeVer)}
             <button className="vchip reveal" onClick={() => setShowCompleted(true)}>
               <svg viewBox="0 0 16 16" className="ic"><path d="M3.5 8.5l3 3 6-7" /></svg>
               {doneV.length} completed
@@ -564,13 +589,13 @@ export default function BoardApp({
                     <div className="cards">
                       {colCards.map((c, i) =>
                         editing === c.id && !isMobile
-                          ? <CardEditor key={c.id} project={project} projCards={projCards} card={c} status={c.status}
-                              onCancel={() => setEditing(null)} onSubmit={(vals) => { patchCard(c.id, vals); setEditing(null); }} />
+                          ? <CardEditor key={c.id} versions={projVersions} card={c} status={c.status}
+                              onCancel={() => setEditing(null)} onSubmit={(vals) => { void submitCard(vals, { kind: 'edit', id: c.id }); setEditing(null); }} />
                           : renderCard(c, i)
                       )}
                       {!isMobile && editing === `__new__:${col.key}` && (
-                        <CardEditor key="__new__" project={project} projCards={projCards} status={col.key} defaultType={newCardType} defaultDate={newCardDate}
-                          onCancel={() => setEditing(null)} onSubmit={(vals) => { void addCard(vals, col.key); setEditing(null); }} />
+                        <CardEditor key="__new__" versions={projVersions} status={col.key} defaultType={newCardType} defaultDate={newCardDate} defaultVersion={versionName(active)}
+                          onCancel={() => setEditing(null)} onSubmit={(vals) => { void submitCard(vals, { kind: 'new', status: col.key }); setEditing(null); }} />
                       )}
                       {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
                     </div>
@@ -589,14 +614,14 @@ export default function BoardApp({
 
       {isMobile && view === 'board' && (mobileEditColumn || mobileEditCard) && (
         <Modal title={mobileEditCard ? `Edit ${v.update.toLowerCase()}` : `New ${v.update.toLowerCase()}`} onClose={() => setEditing(null)}>
-          <CardEditor bare project={project} projCards={projCards}
+          <CardEditor bare versions={projVersions}
             card={mobileEditCard ?? undefined}
             status={mobileEditCard ? mobileEditCard.status : (mobileEditColumn as Status)}
-            defaultType={newCardType} defaultDate={mobileEditCard ? undefined : newCardDate}
+            defaultType={newCardType} defaultDate={mobileEditCard ? undefined : newCardDate} defaultVersion={versionName(active)}
             onCancel={() => setEditing(null)}
             onSubmit={(vals) => {
-              if (mobileEditCard) patchCard(mobileEditCard.id, vals);
-              else void addCard(vals, mobileEditColumn as Status);
+              if (mobileEditCard) void submitCard(vals, { kind: 'edit', id: mobileEditCard.id });
+              else void submitCard(vals, { kind: 'new', status: mobileEditColumn as Status });
               setEditing(null);
             }} />
         </Modal>
@@ -645,13 +670,13 @@ export default function BoardApp({
         <Modal title={`${v.merge} ${v.versions.toLowerCase()}`} className="modal-center" onClose={() => setMergeConfirm(null)}>
           <div className="modal-form">
             <p className="modal-form-hint">
-              Move every card from <strong>“{mergeConfirm.from}”</strong> into <strong>“{mergeConfirm.to}”</strong>,
-              then delete <strong>“{mergeConfirm.from}”</strong>. This can&apos;t be undone.
+              Move every card from <strong>“{mergeConfirm.fromName}”</strong> into <strong>“{mergeConfirm.toName}”</strong>,
+              then delete <strong>“{mergeConfirm.fromName}”</strong>. This can&apos;t be undone.
             </p>
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setMergeConfirm(null)}>Cancel</button>
-              <button className="btn solid" onClick={() => { renameVersion(mergeConfirm.from, mergeConfirm.to); setMergeConfirm(null); }}>{v.merge}</button>
+              <button className="btn solid" onClick={() => { renameVersion(mergeConfirm.fromId, mergeConfirm.toName); setMergeConfirm(null); }}>{v.merge}</button>
             </div>
           </div>
         </Modal>
@@ -661,12 +686,12 @@ export default function BoardApp({
         <Modal title={`Delete ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setDelVerConfirm(null)}>
           <div className="modal-form">
             <p className="modal-form-hint">
-              Delete <strong>“{delVerConfirm}”</strong>? Its cards are kept but lose this {v.version.toLowerCase()} label. This can&apos;t be undone.
+              Delete <strong>“{delVerConfirm.name}”</strong>? Its cards are kept but lose this {v.version.toLowerCase()} label. This can&apos;t be undone.
             </p>
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setDelVerConfirm(null)}>Cancel</button>
-              <button className="btn danger-solid" onClick={() => { deleteVersion(delVerConfirm); setDelVerConfirm(null); }}>Delete</button>
+              <button className="btn danger-solid" onClick={() => { deleteVersion(delVerConfirm.id); setDelVerConfirm(null); }}>Delete</button>
             </div>
           </div>
         </Modal>
@@ -726,43 +751,48 @@ export default function BoardApp({
         );
       })()}
 
-      {colorPop && (isMobile ? (
-        <Sheet title={colorPop.v} onClose={() => setColorPop(null)}>
-          <div className="sheet-rename">
-            <label>{`Rename ${v.version.toLowerCase()}`}</label>
-            <input className="auth-input" defaultValue={colorPop.v} spellCheck={false}
-              onBlur={(e) => renameVersion(colorPop.v, e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
-          </div>
-          <div className="sheet-section-label">Color</div>
-          <div className="color-row">
-            {PALETTE.map((cc, i) => (
-              <button key={i} className={'color-opt' + (versionColorIndex(project, colorPop.v) === i ? ' sel' : '')}
-                style={{ background: cc.dot }} title={cc.name} onClick={() => setVersionColor(colorPop.v, i)} />
-            ))}
-          </div>
-          <button className={'sheet-item' + (isVersionCompleted(project, colorPop.v) ? '' : ' done')}
-            onClick={() => toggleCompleted(colorPop.v)}>
-            {isVersionCompleted(project, colorPop.v) ? `Reopen ${v.version.toLowerCase()}` : 'Mark completed'}
-          </button>
-          {projectVersions(project, projCards).filter((x) => x !== colorPop.v).length > 0 && (
-            <>
-              <div className="sheet-section-label">{`${v.merge} into`}</div>
-              <MergeSelect versions={projectVersions(project, projCards).filter((x) => x !== colorPop.v)} verb={v.merge}
-                onPick={(vv) => { setMergeConfirm({ from: colorPop.v, to: vv }); setColorPop(null); }} />
-            </>
-          )}
-          <button className="sheet-item danger" onClick={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }}>{`Delete ${v.version.toLowerCase()}`}</button>
-        </Sheet>
-      ) : (
-        <ColorPopover x={colorPop.x} y={colorPop.y} label={colorPop.v} word={v.version} mergeVerb={v.merge}
-          current={versionColorIndex(project, colorPop.v)} completed={isVersionCompleted(project, colorPop.v)}
-          others={projectVersions(project, projCards).filter((x) => x !== colorPop.v)}
-          onPick={(i) => setVersionColor(colorPop.v, i)} onToggleComplete={() => toggleCompleted(colorPop.v)}
-          onRename={(v) => renameVersion(colorPop.v, v)}
-          onMerge={(t) => { setMergeConfirm({ from: colorPop.v, to: t }); setColorPop(null); }}
-          onDelete={() => { setDelVerConfirm(colorPop.v); setColorPop(null); }} />
-      ))}
+      {colorPop && (() => {
+        const cver = versionById.get(colorPop.id);
+        if (!cver) return null;
+        const others = projVersions.filter((z) => z.id !== colorPop.id).map((z) => z.name);
+        return isMobile ? (
+          <Sheet title={cver.name} onClose={() => setColorPop(null)}>
+            <div className="sheet-rename">
+              <label>{`Rename ${v.version.toLowerCase()}`}</label>
+              <input className="auth-input" defaultValue={cver.name} spellCheck={false}
+                onBlur={(e) => renameVersion(colorPop.id, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+            </div>
+            <div className="sheet-section-label">Color</div>
+            <div className="color-row">
+              {PALETTE.map((cc, i) => (
+                <button key={i} className={'color-opt' + (versionColor(cver) === i ? ' sel' : '')}
+                  style={{ background: cc.dot }} title={cc.name} onClick={() => setVersionColor(colorPop.id, i)} />
+              ))}
+            </div>
+            <button className={'sheet-item' + (cver.completed ? '' : ' done')}
+              onClick={() => toggleCompleted(colorPop.id)}>
+              {cver.completed ? `Reopen ${v.version.toLowerCase()}` : 'Mark completed'}
+            </button>
+            {others.length > 0 && (
+              <>
+                <div className="sheet-section-label">{`${v.merge} into`}</div>
+                <MergeSelect versions={others} verb={v.merge}
+                  onPick={(vv) => { setMergeConfirm({ fromId: colorPop.id, fromName: cver.name, toName: vv }); setColorPop(null); }} />
+              </>
+            )}
+            <button className="sheet-item danger" onClick={() => { setDelVerConfirm({ id: colorPop.id, name: cver.name }); setColorPop(null); }}>{`Delete ${v.version.toLowerCase()}`}</button>
+          </Sheet>
+        ) : (
+          <ColorPopover x={colorPop.x} y={colorPop.y} label={cver.name} word={v.version} mergeVerb={v.merge}
+            current={versionColor(cver)} completed={cver.completed}
+            others={others}
+            onPick={(i) => setVersionColor(colorPop.id, i)} onToggleComplete={() => toggleCompleted(colorPop.id)}
+            onRename={(nv) => renameVersion(colorPop.id, nv)}
+            onMerge={(t) => { setMergeConfirm({ fromId: colorPop.id, fromName: cver.name, toName: t }); setColorPop(null); }}
+            onDelete={() => { setDelVerConfirm({ id: colorPop.id, name: cver.name }); setColorPop(null); }} />
+        );
+      })()}
 
       {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
       <WhatsNew />

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import Logo from '@/app/Logo';
 import AccountMenu from '@/app/components/AccountMenu';
+import EmailReminders from './EmailReminders';
 import { createClient } from '@/lib/supabase/client';
 import { useDevMode } from '@/lib/useDevMode';
 
@@ -13,7 +14,7 @@ import { useDevMode } from '@/lib/useDevMode';
  * danger zone deletes everything. Styled to match the projects home: canvas
  * background, soft header, big display title, plain divided rows (no cards).
  */
-export default function SettingsView({ userEmail, userName = '' }: { userEmail: string; userName?: string }) {
+export default function SettingsView({ userId, userEmail, userName = '' }: { userId: string; userEmail: string; userName?: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [devMode, setDevMode] = useDevMode();
   const [name, setName] = useState(userName);
@@ -92,6 +93,8 @@ export default function SettingsView({ userEmail, userName = '' }: { userEmail: 
               aria-label="Developer mode" onClick={() => setDevMode(!devMode)}><span /></button>
           </div>
         </section>
+
+        <EmailReminders userId={userId} />
 
         <section className="settings-group">
           <div className="settings-group-label">Account</div>

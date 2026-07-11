@@ -534,6 +534,8 @@ button { font-family: inherit; }
 /* ---------- Horizontal calendar / timeline (Gantt) ---------- */
 .calendar-h { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .cal-head2 { display: flex; align-items: center; gap: 10px; padding: 10px 28px 8px; }
+.cal-scale { flex-shrink: 0; }
+.cal-scale .seg-opt { padding: 5px 12px; font-size: 12.5px; }
 .cal-title { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; }
 .cal-head2 .ic { width: 13px; height: 13px; }
 
@@ -713,6 +715,16 @@ button { font-family: inherit; }
 .notif-pop-title { font-family: var(--display); font-weight: 800; font-size: 13px; color: var(--ink); margin-bottom: 4px; }
 .notif-pop-body { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); margin: 0; }
 .notif-pop-body strong { color: var(--ink); }
+/* Reminder-mode bell: icon stays its normal colour; only a dot badge signals "on". */
+.notif-btn { position: relative; }
+.notif-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 9999px; background: var(--accent); border: 1.5px solid var(--surface); }
+.notif-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.notif-toggle-label { font-size: 12.5px; color: var(--ink); }
+.notif-pop-link { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--ink-soft); text-decoration: none; }
+.notif-pop-link:hover { color: var(--ink); text-decoration: underline; }
+/* Settings: migration-needed warning banner. */
+.settings-warn { margin: 4px 0 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--danger-soft); color: #8A2E30; font-size: 12.5px; line-height: 1.5; }
+.settings-warn code { font-family: var(--mono, monospace); font-size: 11.5px; }
 .acct-item { display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 9px 10px; border: none; background: transparent; border-radius: 10px; font-family: var(--sans); font-size: 13.5px; color: var(--ink); text-decoration: none; cursor: pointer; text-align: left; }
 .acct-item:hover { background: rgba(26,26,24,0.05); }
 .acct-item svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -740,6 +752,49 @@ button { font-family: inherit; }
 .settings-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .settings-msg { font-size: 12.5px; color: var(--ink-soft); margin: 12px 2px 0; }
 .settings-tag { font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-mute); background: #F1F0EA; padding: 2px 6px; border-radius: 6px; vertical-align: middle; margin-left: 6px; }
+
+/* ---- Email reminders: a self-contained card, cleaner than stacked rows ---- */
+.er-card { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; margin-top: 8px; }
+.er-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+.er-head .setting-text { flex: 1; min-width: 0; }
+.er-body { padding: 4px 18px 18px; display: flex; flex-direction: column; gap: 18px; transition: opacity 160ms var(--ease); }
+.er-body.off { opacity: 0.45; pointer-events: none; filter: grayscale(0.3); }
+.er-divider { height: 1px; background: rgba(26,26,24,0.08); margin: 0 18px; }
+.er-field { display: flex; flex-direction: column; gap: 8px; }
+.er-label { font-family: var(--display); font-weight: 800; font-size: 13px; color: var(--ink); display: flex; align-items: center; }
+.er-hint { font-size: 12px; line-height: 1.45; color: var(--ink-soft); margin: -2px 0 0; }
+.er-field .settings-input { width: 100%; max-width: none; box-sizing: border-box; }
+/* Read-only project badges */
+.er-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.er-chip { font-size: 12px; font-weight: 600; color: var(--ink); background: var(--accent-soft); border: 1px solid #F0E4B0; padding: 4px 9px; border-radius: 9999px; }
+.er-empty { font-size: 12.5px; color: var(--ink-mute); font-style: italic; }
+/* Section selector: clickable pills instead of full switch rows */
+.er-seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.er-pill { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-soft); background: #FBFAF6; border: 1.5px solid var(--border); border-radius: 9999px; padding: 6px 13px; cursor: pointer; transition: all 140ms var(--ease); display: inline-flex; align-items: center; gap: 6px; }
+.er-pill:hover { border-color: var(--ink-mute); }
+.er-pill.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.er-pill .er-check { width: 13px; height: 13px; opacity: 0; transition: opacity 120ms var(--ease); fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.er-pill.on .er-check { opacity: 1; }
+/* Horizon stepper */
+.er-inline { display: flex; align-items: center; gap: 10px; }
+.er-inline .settings-input { width: 84px; text-align: center; }
+.er-foot { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-top: 1px solid rgba(26,26,24,0.08); }
+.er-foot .settings-msg { margin: 0; }
+/* Sub-section headings inside the card */
+.er-sub { font-family: var(--display); font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); margin-bottom: 2px; }
+.er-tip { font-size: 11.5px; color: var(--ink-mute); }
+/* Editable project list */
+.er-projlist { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; }
+.er-proj { display: flex; align-items: center; gap: 12px; padding: 11px 13px; background: #FBFAF6; }
+.er-proj + .er-proj { border-top: 1px solid rgba(26,26,24,0.06); }
+.er-proj-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Live email preview */
+.er-preview { border: 1px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; }
+.er-preview-bar { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.er-preview-bar b { font-size: 12.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.er-preview-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); flex-shrink: 0; }
+.er-frame { width: 100%; height: 300px; border: 0; display: block; background: #f6f7f9; }
+.er-preview-empty { padding: 22px 18px; text-align: center; font-size: 12.5px; line-height: 1.5; color: var(--ink-mute); background: #f6f7f9; }
 
 /* Segmented control (per-project board mode) */
 .seg { display: inline-flex; gap: 4px; background: #F1F0EA; border-radius: 12px; padding: 4px; width: fit-content; }

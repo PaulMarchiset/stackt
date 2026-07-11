@@ -1,24 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Card, CardType, Project, Status } from '@/lib/types';
-import { isVersionCompleted, projectVersions, suggestNextVersion, versionColorIndex } from '@/lib/util';
+import type { Card, CardDraft, CardType, Status, Version } from '@/lib/types';
+import { suggestNextVersion, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import DateField from './DateField';
 
 export default function CardEditor({
-  project, projCards, card, status, defaultType, defaultDate, bare, onSubmit, onCancel
+  versions, card, status, defaultType, defaultDate, defaultVersion, bare, onSubmit, onCancel
 }: {
-  project: Project; projCards: Card[]; card?: Card; status: Status;
-  defaultType?: CardType; defaultDate?: string; bare?: boolean;
-  onSubmit: (v: Partial<Card>) => void; onCancel: () => void;
+  versions: Version[]; card?: Card; status: Status;
+  defaultType?: CardType; defaultDate?: string; defaultVersion?: string; bare?: boolean;
+  onSubmit: (v: CardDraft) => void; onCancel: () => void;
 }) {
   const devMode = useBoardDevMode();
   const v = vocab(devMode);
   const [title, setTitle] = useState(card?.title ?? '');
   const [comment, setComment] = useState(card?.comment ?? '');
-  const [version, setVersion] = useState(card ? card.version : project.active_version || '');
+  const [version, setVersion] = useState(
+    card ? (versions.find((z) => z.id === card.version_id)?.name ?? '') : (defaultVersion ?? '')
+  );
   const [date, setDate] = useState<string>(card?.target_date ?? defaultDate ?? '');
   const [endDate, setEndDate] = useState<string>(card?.end_date ?? '');
   const [branch, setBranch] = useState<string>(card?.branch ?? '');
@@ -30,17 +32,16 @@ export default function CardEditor({
     if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
   }, []);
 
-  const vers = projectVersions(project, projCards);
   // Completed versions aren't offered as choices — but keep the card's current one
   // visible so an already-assigned (now completed) version doesn't silently vanish.
-  const pickable = vers.filter((v) => !isVersionCompleted(project, v) || v === version.trim());
+  const pickable = versions.filter((z) => !z.completed || z.name === version.trim());
 
   function submit() {
     const t = title.trim();
     if (!t) { titleRef.current?.focus(); return; }
     // end_date only makes sense alongside a start, and never before it.
     const end = date && endDate && endDate > date ? endDate : null;
-    onSubmit({ title: t, comment: comment.trim(), version: version.trim(), target_date: date || null, end_date: end, branch: branch.trim(), type });
+    onSubmit({ title: t, comment: comment.trim(), versionName: version.trim(), target_date: date || null, end_date: end, branch: branch.trim(), type });
   }
 
   const body = (
@@ -61,12 +62,12 @@ export default function CardEditor({
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); if (e.key === 'Escape') onCancel(); }} />
         <div className="ver-label">{v.version}</div>
         <div className="ver-quick">
-          {pickable.map((v) => (
-            <button key={v} type="button"
-              className={'ver-pick card-theme-' + (versionColorIndex(project, v) ?? 0) + (version.trim() === v ? ' active' : '')}
-              onClick={() => setVersion(v)}>{v}</button>
+          {pickable.map((z) => (
+            <button key={z.id} type="button"
+              className={'ver-pick card-theme-' + (versionColor(z) ?? 0) + (version.trim() === z.name ? ' active' : '')}
+              onClick={() => setVersion(z.name)}>{z.name}</button>
           ))}
-          <button type="button" className="ver-pick" onClick={() => setVersion(devMode ? suggestNextVersion(vers) : '')}>+ New</button>
+          <button type="button" className="ver-pick" onClick={() => setVersion(devMode ? suggestNextVersion(versions.map((z) => z.name)) : '')}>+ New</button>
         </div>
         <div className="edit-row">
           <input className="version" placeholder={`Type a ${v.version.toLowerCase()}, e.g. ${v.versionExample}`} value={version}

@@ -22,6 +22,8 @@ create table if not exists public.projects (
 -- Backfill columns added after the first deploy (safe to re-run).
 alter table public.projects add column if not exists favorite boolean not null default false;
 alter table public.projects add column if not exists repo_url text not null default '';
+-- Opt a project into the daily email reminder (off by default).
+alter table public.projects add column if not exists remind boolean not null default false;
 
 create index if not exists projects_user_idx on public.projects (user_id, position);
 
@@ -108,3 +110,34 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.seed_first_project();
+
+-- ---------- Email reminder preferences ----------
+-- One row per user, holding how their single daily reminder email is built.
+-- `subject` null = use the default subject. `sections` picks which blocks to
+-- include. `horizon_days` is how far ahead "upcoming" looks.
+create table if not exists public.email_prefs (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  enabled      boolean not null default true,
+  subject      text,
+  horizon_days integer not null default 3,
+  sections     text[] not null default '{overdue,today,upcoming}',
+  updated_at   timestamptz not null default now()
+);
+
+alter table public.email_prefs enable row level security;
+
+drop policy if exists "email_prefs_select_own" on public.email_prefs;
+create policy "email_prefs_select_own" on public.email_prefs
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "email_prefs_insert_own" on public.email_prefs;
+create policy "email_prefs_insert_own" on public.email_prefs
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "email_prefs_update_own" on public.email_prefs;
+create policy "email_prefs_update_own" on public.email_prefs
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "email_prefs_delete_own" on public.email_prefs;
+create policy "email_prefs_delete_own" on public.email_prefs
+  for delete using (auth.uid() = user_id);

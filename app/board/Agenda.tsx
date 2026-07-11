@@ -1,7 +1,7 @@
 'use client';
 
-import type { Card, Project } from '@/lib/types';
-import { dateClass, formatDate, formatDateRange, todayISO, versionColorIndex } from '@/lib/util';
+import type { Card, CardDraft, Project, Version } from '@/lib/types';
+import { dateClass, formatDate, formatDateRange, todayISO, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
@@ -27,21 +27,22 @@ type Section = { key: string; label: string; cards: Card[] };
  * <Timeline> so BoardApp can swap the two behind useIsMobile().
  */
 export default function Agenda({
-  project, projCards, cards, editing, newCardDate,
+  project, projCards, versions, cards, editing, newCardDate,
   onAdd, onEdit, onToggle, onMenu, onSubmit, onCancel
 }: {
-  project: Project; projCards: Card[]; cards: Card[];
+  project: Project; projCards: Card[]; versions: Version[]; cards: Card[];
   editing: string | null; newCardDate: string;
   onAdd: (date: string) => void;
   onEdit: (id: string) => void;
   onToggle: (id: string) => void;
   onMenu?: (id: string) => void;
   onReschedule: (id: string, date: string) => void;
-  onSubmit: (v: Partial<Card>) => void;
+  onSubmit: (v: CardDraft) => void;
   onCancel: () => void;
 }) {
   const devMode = useBoardDevMode();
   const v = vocab(devMode);
+  const versionById = new Map(versions.map((z) => [z.id, z] as const));
   const today = todayISO();
   const isNew = !!editing && editing.startsWith('__new__');
   const editCard = editing && !isNew ? cards.find((c) => c.id === editing) : undefined;
@@ -68,7 +69,8 @@ export default function Agenda({
   if (undated.length) sections.push({ key: 'nodate', label: 'No date', cards: undated });
 
   const row = (c: Card) => {
-    const ci = versionColorIndex(project, c.version);
+    const cver = c.version_id ? versionById.get(c.version_id) : null;
+    const ci = versionColor(cver);
     const dcls = dateClass(c);
     const multi = !!(c.target_date && c.end_date && c.end_date > c.target_date);
     return (
@@ -82,7 +84,7 @@ export default function Agenda({
           <button className="ag-title" onClick={() => onEdit(c.id)}>{c.title || 'Untitled'}</button>
           <div className="ag-meta">
             {c.type === 'bug' && <TypeTag />}
-            {c.version && <span className={'chip version' + (ci != null ? ' card-theme-' + ci : '')}>{c.version}</span>}
+            {cver && <span className={'chip version' + (ci != null ? ' card-theme-' + ci : '')}>{cver.name}</span>}
             {c.branch && <BranchChip repoUrl={project.repo_url} branch={c.branch} />}
             {(multi || dcls === 'overdue') && (
               <span className={'date ' + dcls}>
@@ -126,9 +128,10 @@ export default function Agenda({
 
       {(isNew || editCard) && (
         <Modal title={isNew ? `New ${v.update.toLowerCase()}` : `Edit ${v.update.toLowerCase()}`} onClose={onCancel}>
-          <CardEditor bare project={project} projCards={projCards}
+          <CardEditor bare versions={versions}
             card={editCard} status={editCard ? editCard.status : 'todo'}
             defaultDate={isNew ? newCardDate : undefined}
+            defaultVersion={project.active_version_id ? (versionById.get(project.active_version_id)?.name ?? '') : ''}
             onSubmit={onSubmit} onCancel={onCancel} />
         </Modal>
       )}

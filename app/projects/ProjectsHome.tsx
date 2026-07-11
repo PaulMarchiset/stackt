@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import type { Project } from '@/lib/types';
+import type { Project, Version } from '@/lib/types';
 import { versionTheme } from '@/lib/util';
 import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
@@ -100,17 +100,21 @@ export default function ProjectsHome({
     if (busy) return;
     setBusy(true);
     const version = npVersion.trim();
-    const row = {
+    const { data, error } = await supabase.from('projects').insert({
       name: npName.trim() || 'New project',
       repo_url: npRepo.trim(),
-      versions: version ? [version] : [],
-      active_version: version,
       dev_mode: modeToDev(npMode)
-    };
-    const { data, error } = await supabase.from('projects').insert(row).select().single();
+    }).select().single();
+    if (error || !data) { setBusy(false); showToast('Could not create project — check your connection.'); return; }
+    const project = data as Project;
+    // Seed the first version as a real row and mark it active.
+    if (version) {
+      const { data: ver } = await supabase.from('versions')
+        .insert({ project_id: project.id, name: version, position: 0 }).select().single();
+      if (ver) await supabase.from('projects').update({ active_version_id: (ver as Version).id }).eq('id', project.id);
+    }
     setBusy(false);
-    if (error || !data) { showToast('Could not create project — check your connection.'); return; }
-    router.push(`/board?p=${(data as Project).id}`);
+    router.push(`/board?p=${project.id}`);
   }
 
   async function confirmDelete() {

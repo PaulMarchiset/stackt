@@ -13,5 +13,5 @@ export default async function SettingsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  return <SettingsView userEmail={user.email ?? ''} userName={(user.user_metadata?.username as string) ?? ''} />;
+  return <SettingsView userId={user.id} userEmail={user.email ?? ''} userName={(user.user_metadata?.username as string) ?? ''} />;
 }

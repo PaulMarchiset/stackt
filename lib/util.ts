@@ -1,4 +1,4 @@
-import type { Card, Project } from './types';
+import type { Card, Version } from './types';
 import { PALETTE } from './types';
 
 /* Stable hash of a version label → palette index 0..5. */
@@ -9,24 +9,17 @@ export function versionTheme(v: string): number {
   return h % PALETTE.length;
 }
 
-/* Chosen color for a version, else the stable hash. */
-export function versionColorIndex(project: Project, v: string): number | null {
-  if (!v) return null;
-  const map = project.version_colors || {};
-  if (Object.prototype.hasOwnProperty.call(map, v)) return map[v];
-  return versionTheme(v);
+/* Palette index for a version row: its chosen color, else the stable hash. */
+export function versionColor(ver?: Version | null): number | null {
+  if (!ver) return null;
+  return ver.color_index ?? versionTheme(ver.name);
 }
 
-/* All versions for a project: explicit list ∪ versions used by its cards. */
-export function projectVersions(project: Project, cards: Card[]): string[] {
-  const set = new Set<string>(project.versions || []);
-  cards.forEach((c) => { if (c.version) set.add(c.version); });
-  return Array.from(set).sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-}
-
-export function isVersionCompleted(project: Project, v: string): boolean {
-  return !!(project.completed_versions && project.completed_versions.includes(v));
+/* A project's versions in display order (position, then numeric name). */
+export function sortVersions(list: Version[]): Version[] {
+  return list.slice().sort((a, b) =>
+    a.position - b.position ||
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
 export function todayISO(): string {
