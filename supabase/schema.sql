@@ -1,107 +1,175 @@
 -- ============================================================
--- Update Tracker — Supabase schema
--- Run this in the Supabase SQL editor (or via the CLI) once.
--- Every row is owned by a user; row-level security guarantees
--- each user only ever sees and edits their own data.
+-- Stackt — schéma canonique (fresh install)
+-- État de référence de la base. Pour créer un environnement neuf
+-- (staging, nouveau dev), exécute CE fichier une fois.
+-- Pour faire ÉVOLUER une base existante, écris une migration
+-- numérotée dans supabase/migrations/ (0001, 0002, …).
+--
+-- Chaque ligne est possédée par un utilisateur ; la RLS garantit
+-- que chacun ne voit et ne modifie que ses propres données.
 -- ============================================================
+
+-- ---------- Fonctions utilitaires ----------
+-- Touche updated_at à chaque UPDATE (audit léger, utile au scaling).
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
 
 -- ---------- Projects ----------
 create table if not exists public.projects (
-  id                 uuid primary key default gen_random_uuid(),
-  user_id            uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  name               text not null default 'New project',
-  active_version     text not null default '',
-  versions           text[] not null default '{}',
-  completed_versions text[] not null default '{}',
-  version_colors     jsonb  not null default '{}'::jsonb,
-  favorite           boolean not null default false,
-  position           integer not null default 0,
-  created_at         timestamptz not null default now()
+  id                uuid primary key default gen_random_uuid(),
+  user_id           uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name              text not null default 'New project',
+  active_version_id uuid,                       -- FK ajoutée après la table versions (dépendance circulaire)
+  favorite          boolean not null default false,
+  repo_url          text not null default '',
+  dev_mode          boolean,                    -- null = suit le défaut de l'appareil
+  remind            boolean not null default false,
+  position          integer not null default 0,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
 );
 
--- Backfill columns added after the first deploy (safe to re-run).
-alter table public.projects add column if not exists favorite boolean not null default false;
-alter table public.projects add column if not exists repo_url text not null default '';
--- Opt a project into the daily email reminder (off by default).
-alter table public.projects add column if not exists remind boolean not null default false;
-
 create index if not exists projects_user_idx on public.projects (user_id, position);
+
+-- ---------- Versions ----------
+create table if not exists public.versions (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects (id) on delete cascade,
+  name        text not null,
+  color_index smallint,                         -- index de palette 0..5 ; null = auto
+  completed   boolean not null default false,
+  position    integer not null default 0,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (project_id, name)
+);
+
+create index if not exists versions_project_idx on public.versions (project_id, position);
+
+-- La version active d'un projet référence versions (posée maintenant que la table existe).
+alter table public.projects
+  drop constraint if exists projects_active_version_id_fkey;
+alter table public.projects
+  add constraint projects_active_version_id_fkey
+  foreign key (active_version_id) references public.versions (id) on delete set null;
 
 -- ---------- Cards ----------
 create table if not exists public.cards (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
   project_id  uuid not null references public.projects (id) on delete cascade,
+  version_id  uuid references public.versions (id) on delete set null,
   title       text not null default '',
-  version     text not null default '',
-  target_date date,           -- start day (single-day cards use only this)
-  end_date    date,           -- optional last day for multi-day cards
+  comment     text not null default '',
+  branch      text not null default '',
+  target_date date,
+  end_date    date,
   status      text not null default 'todo' check (status in ('todo','inprogress','done')),
   done        boolean not null default false,
   type        text not null default 'update' check (type in ('update','bug')),
   position    integer not null default 0,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
--- Backfill columns added after the first deploy (safe to re-run).
-alter table public.cards add column if not exists end_date date;
-alter table public.cards add column if not exists branch text not null default '';
-alter table public.cards add column if not exists comment text not null default '';
-
 create index if not exists cards_project_idx on public.cards (project_id, status, position);
-create index if not exists cards_user_idx on public.cards (user_id);
+create index if not exists cards_user_idx    on public.cards (user_id);
+create index if not exists cards_version_idx  on public.cards (version_id);
+
+-- ---------- Email reminder preferences ----------
+create table if not exists public.email_prefs (
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  enabled      boolean not null default true,
+  subject      text,
+  horizon_days integer not null default 3 check (horizon_days between 0 and 30),
+  sections     text[] not null default '{overdue,today,upcoming}'
+               check (sections <@ array['overdue','today','upcoming']),
+  updated_at   timestamptz not null default now()
+);
+
+-- ---------- updated_at triggers ----------
+drop trigger if exists projects_set_updated_at on public.projects;
+create trigger projects_set_updated_at before update on public.projects
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists versions_set_updated_at on public.versions;
+create trigger versions_set_updated_at before update on public.versions
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists cards_set_updated_at on public.cards;
+create trigger cards_set_updated_at before update on public.cards
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists email_prefs_set_updated_at on public.email_prefs;
+create trigger email_prefs_set_updated_at before update on public.email_prefs
+  for each row execute function public.set_updated_at();
 
 -- ---------- Row-level security ----------
-alter table public.projects enable row level security;
-alter table public.cards    enable row level security;
+alter table public.projects    enable row level security;
+alter table public.versions    enable row level security;
+alter table public.cards       enable row level security;
+alter table public.email_prefs enable row level security;
 
--- Projects: owner-only access.
+-- Projects: owner-only.
 drop policy if exists "projects_select_own" on public.projects;
-create policy "projects_select_own" on public.projects
-  for select using (auth.uid() = user_id);
-
+create policy "projects_select_own" on public.projects for select using (auth.uid() = user_id);
 drop policy if exists "projects_insert_own" on public.projects;
-create policy "projects_insert_own" on public.projects
-  for insert with check (auth.uid() = user_id);
-
+create policy "projects_insert_own" on public.projects for insert with check (auth.uid() = user_id);
 drop policy if exists "projects_update_own" on public.projects;
-create policy "projects_update_own" on public.projects
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
+create policy "projects_update_own" on public.projects for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "projects_delete_own" on public.projects;
-create policy "projects_delete_own" on public.projects
-  for delete using (auth.uid() = user_id);
+create policy "projects_delete_own" on public.projects for delete using (auth.uid() = user_id);
 
--- Cards: owner-only, and the card's project must belong to the same user.
+-- Versions: accessible only if the parent project belongs to the user.
+drop policy if exists "versions_select_own" on public.versions;
+create policy "versions_select_own" on public.versions for select
+  using (exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()));
+drop policy if exists "versions_insert_own" on public.versions;
+create policy "versions_insert_own" on public.versions for insert
+  with check (exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()));
+drop policy if exists "versions_update_own" on public.versions;
+create policy "versions_update_own" on public.versions for update
+  using (exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()))
+  with check (exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()));
+drop policy if exists "versions_delete_own" on public.versions;
+create policy "versions_delete_own" on public.versions for delete
+  using (exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()));
+
+-- Cards: owner-only, and the parent project must belong to the same user.
 drop policy if exists "cards_select_own" on public.cards;
-create policy "cards_select_own" on public.cards
-  for select using (auth.uid() = user_id);
-
+create policy "cards_select_own" on public.cards for select using (auth.uid() = user_id);
 drop policy if exists "cards_insert_own" on public.cards;
-create policy "cards_insert_own" on public.cards
-  for insert with check (
-    auth.uid() = user_id
-    and exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid())
-  );
-
+create policy "cards_insert_own" on public.cards for insert with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.projects p where p.id = project_id and p.user_id = auth.uid()));
 drop policy if exists "cards_update_own" on public.cards;
-create policy "cards_update_own" on public.cards
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
+create policy "cards_update_own" on public.cards for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "cards_delete_own" on public.cards;
-create policy "cards_delete_own" on public.cards
-  for delete using (auth.uid() = user_id);
+create policy "cards_delete_own" on public.cards for delete using (auth.uid() = user_id);
+
+-- Email prefs: owner-only.
+drop policy if exists "email_prefs_select_own" on public.email_prefs;
+create policy "email_prefs_select_own" on public.email_prefs for select using (auth.uid() = user_id);
+drop policy if exists "email_prefs_insert_own" on public.email_prefs;
+create policy "email_prefs_insert_own" on public.email_prefs for insert with check (auth.uid() = user_id);
+drop policy if exists "email_prefs_update_own" on public.email_prefs;
+create policy "email_prefs_update_own" on public.email_prefs for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "email_prefs_delete_own" on public.email_prefs;
+create policy "email_prefs_delete_own" on public.email_prefs for delete using (auth.uid() = user_id);
 
 -- ---------- Seed a starter project for every new user ----------
--- Gives a friendly first-run experience instead of an empty screen.
 create or replace function public.seed_first_project()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.projects (user_id, name, active_version)
-  values (new.id, 'My first project', '');
+  insert into public.projects (user_id, name) values (new.id, 'My first project');
   return new;
 end;
 $$;
@@ -110,34 +178,3 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.seed_first_project();
-
--- ---------- Email reminder preferences ----------
--- One row per user, holding how their single daily reminder email is built.
--- `subject` null = use the default subject. `sections` picks which blocks to
--- include. `horizon_days` is how far ahead "upcoming" looks.
-create table if not exists public.email_prefs (
-  user_id      uuid primary key references auth.users (id) on delete cascade,
-  enabled      boolean not null default true,
-  subject      text,
-  horizon_days integer not null default 3,
-  sections     text[] not null default '{overdue,today,upcoming}',
-  updated_at   timestamptz not null default now()
-);
-
-alter table public.email_prefs enable row level security;
-
-drop policy if exists "email_prefs_select_own" on public.email_prefs;
-create policy "email_prefs_select_own" on public.email_prefs
-  for select using (auth.uid() = user_id);
-
-drop policy if exists "email_prefs_insert_own" on public.email_prefs;
-create policy "email_prefs_insert_own" on public.email_prefs
-  for insert with check (auth.uid() = user_id);
-
-drop policy if exists "email_prefs_update_own" on public.email_prefs;
-create policy "email_prefs_update_own" on public.email_prefs
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-drop policy if exists "email_prefs_delete_own" on public.email_prefs;
-create policy "email_prefs_delete_own" on public.email_prefs
-  for delete using (auth.uid() = user_id);

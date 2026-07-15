@@ -6,7 +6,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on app routes only — skip _next, the OG image, and anything with a file
+  // Run on app routes only — skip API routes (they self-authorize, e.g. the cron
+  // endpoint via CRON_SECRET), _next, the OG image, and anything with a file
   // extension (favicon, robots.txt, sitemap.xml, the Google verification .html, etc.).
-  matcher: ['/((?!_next|opengraph-image|.*\\..*).*)']
+  matcher: ['/((?!api|_next|opengraph-image|.*\\..*).*)']
 };
