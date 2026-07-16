@@ -22,6 +22,28 @@ export function sortVersions(list: Version[]): Version[] {
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
+/* The reminder cron is scheduled at 08:00 **UTC** (see vercel.json), and Vercel
+   only guarantees it fires within the hour — so the mail lands in a one-hour
+   window, not at a precise time. */
+export const CRON_UTC_HOUR = 8;
+export const CRON_WINDOW_HOURS = 1;
+
+/* The device's own timezone, e.g. "Europe/Paris". */
+export function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+/* The cron's send window rendered in `tz`, e.g. { from: '10:00', to: '11:00' }.
+   Anchored to `ref`'s UTC date so DST is applied for the right day. */
+export function sendWindow(tz: string, ref: Date = new Date()): { from: string; to: string } {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  });
+  const at = (hour: number) =>
+    fmt.format(new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate(), hour)));
+  return { from: at(CRON_UTC_HOUR), to: at(CRON_UTC_HOUR + CRON_WINDOW_HOURS) };
+}
+
 export function todayISO(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');

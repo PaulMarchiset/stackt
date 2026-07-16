@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { renderDigest } from '@/lib/email/template';
+import { defaultSubject, renderDigest } from '@/lib/email/template';
+import { localTimeZone, sendWindow, versionTheme } from '@/lib/util';
 import {
   DEFAULT_EMAIL_PREFS, EMAIL_SECTIONS,
   type Card, type EmailPrefs, type EmailSection, type Project
@@ -18,12 +19,16 @@ function parisToday(): string {
 }
 
 /**
- * The single control center for the daily reminder email. Everything lives here:
- * master on/off, which projects to include (editable — the header bell is just a
- * shortcut for the same flag), the subject, which sections to show, the horizon,
- * and a live preview rendered with the very engine the cron uses.
+ * The control center for the daily reminder email: master on/off, which projects
+ * to include (the header bell is just a shortcut for the same flag), the
+ * subject, which sections to show and how far "upcoming" reaches — with a live
+ * preview beside them rendered by the very engine the cron uses.
  */
-export default function EmailReminders({ userId }: { userId: string }) {
+export default function EmailReminders({
+  userId, userEmail, onToast
+}: {
+  userId: string; userEmail: string; onToast: (msg: string, error?: boolean) => void;
+}) {
   const supabase = useMemo(() => createClient(), []);
   const [projects, setProjects] = useState<ProjRow[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -33,8 +38,12 @@ export default function EmailReminders({ userId }: { userId: string }) {
   const [sections, setSections] = useState<EmailSection[]>(DEFAULT_EMAIL_PREFS.sections);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
   const [schemaError, setSchemaError] = useState(false);
+  /* Read from the device, so it can only be known after mount (the server has
+     no idea what timezone the reader is in). */
+  const [tz, setTz] = useState<string | null>(null);
+
+  useEffect(() => setTz(localTimeZone()), []);
 
   useEffect(() => {
     let alive = true;
@@ -63,7 +72,10 @@ export default function EmailReminders({ userId }: { userId: string }) {
   async function toggleProject(id: string, next: boolean) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: next } : p)));
     const { error } = await supabase.from('projects').update({ remind: next }).eq('id', id);
-    if (error) setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)));
+    if (error) {
+      setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)));
+      onToast('Could not update that project — try again.', true);
+    }
   }
 
   function toggleSection(key: EmailSection) {
@@ -71,7 +83,7 @@ export default function EmailReminders({ userId }: { userId: string }) {
   }
 
   async function savePrefs() {
-    setBusy(true); setMsg('');
+    setBusy(true);
     const { error } = await supabase.from('email_prefs').upsert({
       user_id: userId,
       enabled,
@@ -81,10 +93,19 @@ export default function EmailReminders({ userId }: { userId: string }) {
       updated_at: new Date().toISOString()
     });
     setBusy(false);
-    setMsg(error ? 'Échec de l’enregistrement — réessaie.' : 'Enregistré ✓');
+    onToast(error ? 'Could not save — try again.' : 'Reminder settings saved', !!error);
   }
 
+  const today = parisToday();
   const reminded = useMemo(() => projects.filter((p) => p.remind), [projects]);
+  const win = useMemo(() => (tz ? sendWindow(tz) : null), [tz]);
+
+  /* Open cards per project — powers the counts and the "empty" flag. */
+  const openCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of cards) m.set(c.project_id, (m.get(c.project_id) || 0) + 1);
+    return m;
+  }, [cards]);
 
   // Live preview via the exact engine the cron uses.
   const preview = useMemo(() => {
@@ -92,109 +113,145 @@ export default function EmailReminders({ userId }: { userId: string }) {
       user_id: userId, enabled, subject: subject.trim() || null,
       horizon_days: Math.max(0, Math.min(30, Number(horizon) || 0)), sections
     };
-    return renderDigest({ projects: reminded as Project[], cards, prefs, today: parisToday() });
-  }, [userId, enabled, subject, horizon, sections, reminded, cards]);
+    return renderDigest({ projects: reminded as Project[], cards, prefs, today });
+  }, [userId, enabled, subject, horizon, sections, reminded, cards, today]);
 
-  if (loading) return null;
+  if (loading) return <div className="set-card"><div className="set-row"><p className="set-desc">Loading…</p></div></div>;
+
+  const showUpcoming = sections.includes('upcoming');
 
   return (
-    <section className="settings-group">
-      <div className="settings-group-label">Rappels email</div>
-
+    <>
       {schemaError && (
-        <div className="settings-warn">
-          La base n’est pas encore prête : exécute le script <code>supabase/schema.sql</code> dans
-          l’éditeur SQL de Supabase, puis recharge cette page.
+        <div className="set-warn">
+          The database isn&apos;t ready yet: run <code>supabase/schema.sql</code> in the Supabase SQL editor,
+          then reload this page.
         </div>
       )}
 
-      <div className="er-card">
-        {/* Master on/off */}
-        <div className="er-head">
-          <div className="setting-text">
-            <div className="setting-title">Email quotidien</div>
-            <div className="setting-desc">Un seul email chaque matin à 8h, avec les tâches des projets choisis.</div>
+      {/* Master on/off */}
+      <div className="set-card" style={{ marginBottom: 20 }}>
+        <div className="set-row">
+          <div className="set-rowhead">
+            <div className="set-rowtext">
+              <h3 className="set-h3">Daily email</h3>
+              <p className="set-desc">One email every morning with the tasks from the projects you pick.</p>
+            </div>
+            <button className={'switch' + (enabled ? ' on' : '')} role="switch" aria-checked={enabled}
+              aria-label="Daily email" onClick={() => setEnabled(!enabled)}><span /></button>
           </div>
-          <button className={'switch' + (enabled ? ' on' : '')} role="switch" aria-checked={enabled}
-            aria-label="Email quotidien" onClick={() => setEnabled(!enabled)}><span /></button>
+          {win && tz && (
+            <div className="set-metarow">
+              <span className="set-meta">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                Sent between {win.from} and {win.to}
+              </span>
+              <span className="set-meta">Your timezone · {tz}</span>
+            </div>
+          )}
         </div>
+      </div>
 
-        <div className={'er-body' + (enabled ? '' : ' off')} aria-hidden={!enabled}>
+      <div className={'set-builder' + (enabled ? '' : ' off')} aria-hidden={!enabled}>
+        <div className="set-form">
           {/* Projects */}
-          <div className="er-field">
-            <div className="er-sub">Projets à inclure</div>
-            {projects.length === 0 ? (
-              <div className="er-empty">Aucun projet pour l’instant.</div>
-            ) : (
-              <div className="er-projlist">
-                {projects.map((p) => (
-                  <div className="er-proj" key={p.id}>
-                    <span className="er-proj-name">{p.name || 'Sans nom'}</span>
-                    <button className={'switch' + (p.remind ? ' on' : '')} role="switch" aria-checked={p.remind}
-                      aria-label={`Inclure ${p.name}`} onClick={() => toggleProject(p.id, !p.remind)}><span /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="er-tip">Astuce : tu peux aussi (dés)activer un projet depuis la cloche 🔔 de son tableau.</div>
-          </div>
-
-          {/* Content */}
-          <div className="er-field">
-            <div className="er-sub">Contenu du mail</div>
-
-            <label className="er-label" htmlFor="er-subject">Objet</label>
-            <input id="er-subject" className="settings-input" value={subject} placeholder="Rappel Stackt — {date}"
-              onChange={(e) => setSubject(e.target.value)} />
-
-            <label className="er-label" style={{ marginTop: 6 }}>Sections</label>
-            <div className="er-seg" role="group" aria-label="Sections incluses">
-              {EMAIL_SECTIONS.map((s) => {
-                const on = sections.includes(s.key);
-                return (
-                  <button type="button" key={s.key} className={'er-pill' + (on ? ' on' : '')}
-                    aria-pressed={on} onClick={() => toggleSection(s.key)}>
-                    <svg viewBox="0 0 24 24" className="er-check"><path d="M5 13l4 4L19 7" /></svg>
-                    {s.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <label className="er-label" htmlFor="er-horizon" style={{ marginTop: 6 }}>Horizon « À venir »</label>
-            <div className="er-inline">
-              <input id="er-horizon" className="settings-input" type="number" min={0} max={30} value={horizon}
-                onChange={(e) => setHorizon(Number(e.target.value))} />
-              <span className="er-tip">jours à l’avance</span>
-            </div>
-          </div>
-
-          {/* Live preview */}
-          <div className="er-field">
-            <div className="er-sub">Aperçu</div>
-            <div className="er-preview">
-              <div className="er-preview-bar">
-                <span className="er-preview-label">Objet</span>
-                <b>{subject.trim() || `Rappel Stackt — ${parisToday()}`}</b>
-              </div>
-              {preview ? (
-                <iframe className="er-frame" title="Aperçu du mail" srcDoc={preview.html} />
+          <div className="set-card">
+            <div className="set-row">
+              <span className="set-label">Projects to include</span>
+              {projects.length === 0 ? (
+                <p className="set-desc">No projects yet.</p>
               ) : (
-                <div className="er-preview-empty">
-                  Rien à envoyer avec ces réglages aujourd’hui (aucune tâche dans les sections choisies).
+                <div className="set-projlist">
+                  {projects.map((p) => {
+                    const n = openCount.get(p.id) || 0;
+                    return (
+                      <div className={'set-proj card-theme-' + versionTheme(p.name)} key={p.id}>
+                        <span className="set-swatch" />
+                        <span className="set-proj-name">{p.name || 'Untitled'}</span>
+                        <span className="set-proj-count">{n}</span>
+                        <span className="set-proj-spacer" />
+                        {n === 0 && <span className="set-flag">empty</span>}
+                        <button className={'switch' + (p.remind ? ' on' : '')} role="switch" aria-checked={p.remind}
+                          aria-label={`Include ${p.name}`} onClick={() => toggleProject(p.id, !p.remind)}><span /></button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
+
+          {/* Content */}
+          <div className="set-card">
+            <div className="set-row">
+              <label className="set-label" htmlFor="er-subject">Subject line</label>
+              <input id="er-subject" className="set-input mono" value={subject} placeholder={defaultSubject(today)}
+                onChange={(e) => setSubject(e.target.value)} />
+              <p className="set-hint">Leave it empty to keep the default subject.</p>
+            </div>
+
+            <div className="set-row">
+              <span className="set-label">Sections to show</span>
+              <div className="set-chips" role="group" aria-label="Sections to show">
+                {EMAIL_SECTIONS.map((s) => {
+                  const on = sections.includes(s.key);
+                  return (
+                    <button type="button" key={s.key} className="set-chip" data-key={s.key}
+                      aria-pressed={on} onClick={() => toggleSection(s.key)}>
+                      <span className="dot" />{s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {showUpcoming && (
+              <div className="set-row">
+                <span className="set-label">Upcoming window</span>
+                <div className="set-inline">
+                  <div className="set-stepper">
+                    <button type="button" aria-label="Fewer days" disabled={horizon <= 0}
+                      onClick={() => setHorizon((h) => Math.max(0, h - 1))}>−</button>
+                    <span className="val">{horizon}</span>
+                    <button type="button" aria-label="More days" disabled={horizon >= 30}
+                      onClick={() => setHorizon((h) => Math.min(30, h + 1))}>+</button>
+                  </div>
+                  <span className="set-unit">days ahead</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="set-savebar">
+            <button className="btn solid" onClick={savePrefs} disabled={busy}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
 
-        <div className="er-foot">
-          <button className="btn solid" onClick={savePrefs} disabled={busy}>
-            {busy ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-          {msg && <span className="settings-msg">{msg}</span>}
+        {/* Live preview */}
+        <div className="set-preview-wrap">
+          <div className="set-pv-top">
+            <span className="set-label" style={{ margin: 0 }}>Live preview</span>
+            <span className="set-live"><i />Updating</span>
+          </div>
+          <div className="set-mail">
+            <div className="set-mail-chrome"><i /><i /><i /></div>
+            <div className="set-mail-subj">
+              <div className="k">Subject</div>
+              <div className="v">{preview?.subject || subject.trim() || defaultSubject(today)}</div>
+            </div>
+            {preview ? (
+              <iframe className="set-frame" title="Email preview" srcDoc={preview.html} />
+            ) : (
+              <div className="set-mail-empty">
+                Nothing to send with these settings today.<br />Turn on a project or a section.
+              </div>
+            )}
+          </div>
+          <p className="set-hint">Sent to <b>{userEmail}</b>.</p>
         </div>
       </div>
-    </section>
+    </>
   );
 }

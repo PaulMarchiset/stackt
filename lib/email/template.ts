@@ -7,6 +7,32 @@ export interface DigestInput {
   today: string;       // YYYY-MM-DD in the user's reference timezone
 }
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+/* 1 → "1st", 22 → "22nd", 13 → "13th". */
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  return n + (['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+}
+
+/* "2026-07-15" → "15th July". Spelled out rather than locale-formatted on
+   purpose: this string is rendered by the cron on the server and previewed in
+   the browser, and both must produce the same text. */
+export function formatDigestDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d || m < 1 || m > 12) return iso;
+  return `${ordinal(d)} ${MONTHS[m - 1]}`;
+}
+
+/* The subject used when the user hasn't set one. Exported so the settings
+   preview can show the very same default instead of duplicating the wording. */
+export function defaultSubject(today: string): string {
+  return `Stackt reminder — ${formatDigestDate(today)}`;
+}
+
 /* Escape user-supplied text before dropping it into HTML. */
 function esc(s: string): string {
   return s
@@ -31,16 +57,20 @@ function bucketFor(card: Card, today: string, horizonEnd: string): EmailSection 
   return null; // beyond the horizon
 }
 
+/* Mirrors EMAIL_SECTIONS in lib/types.ts, which labels the same buckets in the
+   settings UI — keep the wording in step. */
 const SECTION_TITLES: Record<EmailSection, string> = {
-  overdue: '🔴 En retard',
-  today: "🟡 Dus aujourd'hui",
-  upcoming: '🟢 À venir'
+  overdue: '🔴 Overdue',
+  today: '🟡 Due today',
+  upcoming: '🟢 Upcoming'
 };
 
 function renderCardLine(card: Card, projectName: string): string {
-  const date = card.target_date ? ` <span style="color:#888">— ${esc(card.target_date)}</span>` : '';
+  const date = card.target_date
+    ? ` <span style="color:#888">— ${esc(formatDigestDate(card.target_date))}</span>`
+    : '';
   const proj = `<span style="color:#888;font-size:12px"> · ${esc(projectName)}</span>`;
-  return `<li style="margin:4px 0">${esc(card.title || 'Sans titre')}${date}${proj}</li>`;
+  return `<li style="margin:4px 0">${esc(card.title || 'Untitled')}${date}${proj}</li>`;
 }
 
 /* Build the reminder email for one user. Returns null when, after applying the
@@ -75,19 +105,59 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
     })
     .join('');
 
-  const subject = (prefs.subject && prefs.subject.trim()) || `Rappel Stackt — ${today}`;
+  const subject = (prefs.subject && prefs.subject.trim()) || defaultSubject(today);
 
   const html = `<!doctype html>
-<html><body style="margin:0;background:#f6f7f9;padding:24px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:28px 32px">
-    <div style="font-weight:700;font-size:18px;margin-bottom:4px">Stackt</div>
-    <div style="color:#888;font-size:13px;margin-bottom:8px">Ton rappel du ${esc(today)}</div>
-    ${blocks}
-    <div style="margin-top:28px;border-top:1px solid #eee;padding-top:14px;color:#aaa;font-size:12px">
-      Tu reçois ce mail car tu as activé les rappels. Gère-les dans Réglages.
-    </div>
-  </div>
-</body></html>`;
+<html><body><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F6F4EC;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+      <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="width:480px;max-width:480px;background:#FFFFFF;border-radius:18px;overflow:hidden;">
+        <!-- Header — logo rebuilt in HTML so it always renders (no image to block) -->
+        <tr>
+          <td style="padding:32px 36px 8px 36px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="vertical-align:middle;padding-right:11px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                    <tr><td width="30" align="right"><div style="width:30px;height:7px;background:#E58E36;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+                    <tr><td height="2" style="font-size:0;line-height:2px;">&nbsp;</td></tr>
+                    <tr><td width="30" align="right"><div style="width:22px;height:7px;background:#4B73F5;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+                    <tr><td height="2" style="font-size:0;line-height:2px;">&nbsp;</td></tr>
+                    <tr><td width="30" align="right"><div style="width:16px;height:7px;background:#2CBE3D;border-radius:2px;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+                  </table>
+                </td>
+                <td style="vertical-align:middle;font-family:'Helvetica Neue',Arial,sans-serif;font-size:22px;font-weight:800;letter-spacing:-0.5px;color:#1B1A17;">
+                  Stackt
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:18px 36px 4px 36px;font-family:'Helvetica Neue',Arial,sans-serif;">
+            <h1 style="margin:0 0 10px 0;font-size:21px;font-weight:800;color:#1B1A17;letter-spacing:-0.4px;">Your reminder of the ${esc(formatDigestDate(today))}</h1>
+            <p style="margin:0;font-size:14.5px;line-height:1.6;color:#5E5C54;">
+              ${blocks}
+            </p>
+          </td>
+        </tr>
+        <!-- Divider + footer -->
+        <tr>
+          <td style="padding:26px 36px 30px 36px;">
+            <div style="height:1px;background:#ECEAE1;font-size:0;line-height:0;">&nbsp;</div>
+            <p style="margin:18px 0 0 0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:11.5px;line-height:1.6;color:#97948A;">
+              Don't want to receive these emails? You can manage your reminder preferences in your <a href="https://stackt.paulmarchiset.me/settings" style="color:#4B73F5;text-decoration:none;">Settings</a>.
+            </p>
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:18px 0 0 0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;color:#B3B0A6;">Stackt · Plan and track your updates</p>
+    </td>
+  </tr>
+</table><html><body>`;
 
   return { subject, html };
 }

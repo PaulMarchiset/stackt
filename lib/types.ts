@@ -42,10 +42,12 @@ export interface Project {
 
 export type EmailSection = 'overdue' | 'today' | 'upcoming';
 
+/* Labels for the settings UI. The email's own section titles live in
+   lib/email/template.ts — changing these does not change what gets sent. */
 export const EMAIL_SECTIONS: { key: EmailSection; label: string }[] = [
-  { key: 'overdue', label: 'En retard' },
-  { key: 'today', label: "Dus aujourd'hui" },
-  { key: 'upcoming', label: 'À venir' }
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'today', label: 'Due today' },
+  { key: 'upcoming', label: 'Upcoming' }
 ];
 
 export interface EmailPrefs {
