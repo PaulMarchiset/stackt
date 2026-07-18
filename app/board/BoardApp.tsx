@@ -149,7 +149,7 @@ export default function BoardApp({
     const row = {
       project_id: project.id, title: values.title ?? '', comment: values.comment ?? '', version_id: values.version_id ?? null,
       target_date: values.target_date ?? null, end_date: values.end_date ?? null,
-      status, done: status === 'done', type: values.type ?? 'update', branch: values.branch ?? ''
+      status, ...doneFields(status === 'done'), type: values.type ?? 'update', branch: values.branch ?? ''
     };
     setSaving('saving');
     const { data, error } = await supabase.from('cards').insert(row).select().single();
@@ -165,19 +165,27 @@ export default function BoardApp({
     setCards((cs) => cs.filter((c) => c.id !== id));
     void persist(supabase.from('cards').delete().eq('id', id));
   }
+  /* Every path that flips `done` goes through this, so done_at is always in
+     step: stamped when checked, cleared when unchecked. The Done column reads
+     it to show the most recently checked first. Re-checking an already-done
+     card keeps its original stamp. */
+  function doneFields(done: boolean, prev?: Card): Pick<Card, 'done' | 'done_at'> {
+    if (!done) return { done: false, done_at: null };
+    return { done: true, done_at: prev?.done && prev.done_at ? prev.done_at : new Date().toISOString() };
+  }
   function moveCard(id: string, status: Status) {
     const c = cards.find((x) => x.id === id);
     if (!c || c.status === status) return;
     setJustMoved(id);
     window.setTimeout(() => setJustMoved(null), 420);
-    patchCard(id, { status, done: status === 'done' });
+    patchCard(id, { status, ...doneFields(status === 'done', c) });
   }
   function toggleDone(id: string) {
     const c = cards.find((x) => x.id === id);
     if (!c) return;
     const done = !c.done;
     const status: Status = done ? 'done' : c.status === 'done' ? 'todo' : c.status;
-    patchCard(id, { done, status });
+    patchCard(id, { status, ...doneFields(done, c) });
   }
 
   /* ---------- Version ops (the versions table is the source of truth) ---------- */
@@ -225,6 +233,16 @@ export default function BoardApp({
   }
   /* Rename a version. If the new name already exists, this MERGES: the version's
      cards move onto the target and the old row is deleted. */
+  /* Commit whatever is typed in the open rename field. Closing the popover
+     unmounts the input, and React fires no blur on unmount — so clicking away
+     would silently drop the edit unless we read the live value here first.
+     renameVersion no-ops on an empty or unchanged name, so calling it is safe. */
+  function commitPendingRename(id: string) {
+    // Tagged explicitly: a plain `.sheet-rename input` would also match the
+    // project-rename sheet and could rename the version to the project's name.
+    const input = document.querySelector<HTMLInputElement>('[data-version-rename]');
+    if (input) renameVersion(id, input.value);
+  }
   function renameVersion(id: string, raw: string) {
     if (!project) return;
     const ver = versions.find((z) => z.id === id);
@@ -258,8 +276,10 @@ export default function BoardApp({
     if (completed && project.active_version_id === id) patchProject(project.id, { active_version_id: null });
     // Completing a version closes whatever's left in it (its unfinished cards → done).
     if (completed) {
-      setCards((cs) => cs.map((c) => (c.version_id === id && !c.done ? { ...c, done: true, status: 'done' } : c)));
-      void persist(supabase.from('cards').update({ done: true, status: 'done' }).eq('version_id', id).eq('done', false));
+      // One stamp for the batch: they were all closed by the same action.
+      const closed = { done: true, done_at: new Date().toISOString(), status: 'done' as Status };
+      setCards((cs) => cs.map((c) => (c.version_id === id && !c.done ? { ...c, ...closed } : c)));
+      void persist(supabase.from('cards').update(closed).eq('version_id', id).eq('done', false));
     }
     setColorPop(null);
   }
@@ -278,8 +298,12 @@ export default function BoardApp({
     if (!colorPop) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (!t.closest('.color-pop') && !t.closest('.vswatch')) setColorPop(null);
+      if (!t.closest('.color-pop') && !t.closest('.vswatch')) {
+        commitPendingRename(colorPop.id);   // save the edit the click is dismissing
+        setColorPop(null);
+      }
     };
+    // Escape stays a cancel: it closes without committing.
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setColorPop(null); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -572,7 +596,7 @@ export default function BoardApp({
           )}
           <main className="board" ref={boardRef} onScroll={isMobile ? onBoardScroll : undefined}>
             {COLUMNS.map((col) => {
-              const colCards = sortCards(scopedCards.filter((c) => c.status === col.key));
+              const colCards = sortCards(scopedCards.filter((c) => c.status === col.key), col.key === 'done');
               const addingBug = typeFilter === 'bug';
               return (
                 <section key={col.key} className="column" data-status={col.key}
@@ -756,10 +780,10 @@ export default function BoardApp({
         if (!cver) return null;
         const others = projVersions.filter((z) => z.id !== colorPop.id).map((z) => z.name);
         return isMobile ? (
-          <Sheet title={cver.name} onClose={() => setColorPop(null)}>
+          <Sheet title={cver.name} onClose={() => { commitPendingRename(colorPop.id); setColorPop(null); }}>
             <div className="sheet-rename">
               <label>{`Rename ${v.version.toLowerCase()}`}</label>
-              <input className="auth-input" defaultValue={cver.name} spellCheck={false}
+              <input className="auth-input" data-version-rename defaultValue={cver.name} spellCheck={false}
                 onBlur={(e) => renameVersion(colorPop.id, e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
             </div>
@@ -832,7 +856,7 @@ function ColorPopover({
 }) {
   return (
     <div className="color-pop" style={{ top: y, left: x }}>
-      <input className="pop-rename" defaultValue={label} spellCheck={false} aria-label={`${word} name`}
+      <input className="pop-rename" data-version-rename defaultValue={label} spellCheck={false} aria-label={`${word} name`}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onRename((e.target as HTMLInputElement).value); } }}
         onBlur={(e) => onRename(e.target.value)} />
       <div className="color-row">

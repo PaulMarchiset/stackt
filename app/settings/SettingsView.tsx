@@ -7,6 +7,8 @@ import AccountMenu from '@/app/components/AccountMenu';
 import EmailReminders from './EmailReminders';
 import { createClient } from '@/lib/supabase/client';
 import { useDevMode } from '@/lib/useDevMode';
+import { CHANGELOG_VERSION } from '@/lib/changelog';
+import { BUG_ICON_PATH } from '@/app/components/TypeTag';
 
 /**
  * Dedicated settings page. Profile (name + email) lives in Supabase auth,
@@ -23,8 +25,17 @@ const SECTIONS = [
   { id: 'profile', label: 'Profile' },
   { id: 'prefs', label: 'Preferences' },
   { id: 'email', label: 'Email reminders' },
+  { id: 'help', label: 'Help & legal' },
   { id: 'account', label: 'Account' }
 ] as const;
+
+const CONTACT = 'stackt@paulmarchiset.me';
+
+const LEGAL = [
+  { href: '/legal', label: 'Legal notice' },
+  { href: '/terms', label: 'Terms of Use' },
+  { href: '/privacy', label: 'Privacy Policy' }
+];
 
 export default function SettingsView({ userId, userEmail, userName = '' }: { userId: string; userEmail: string; userName?: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -34,6 +45,9 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [active, setActive] = useState<string>(SECTIONS[0].id);
+  /* Built after mount: the user agent is only knowable in the browser, and a
+     server/client mismatch would trip hydration. Falls back to a bare mailto. */
+  const [bugReportHref, setBugReportHref] = useState(`mailto:${CONTACT}`);
   const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
   const toastTimer = useRef<number>(0);
 
@@ -44,6 +58,19 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
   }, []);
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  /* A bug report is far more useful with the browser and build attached, so we
+     pre-fill them — visibly, in the body the user can read and edit before
+     sending, rather than smuggling anything along. */
+  useEffect(() => {
+    const body = [
+      'What happened:', '', 'What you expected:', '', 'Steps to reproduce:', '', '',
+      '---', `Build: ${CHANGELOG_VERSION}`, `Browser: ${navigator.userAgent}`
+    ].join('\n');
+    setBugReportHref(
+      `mailto:${CONTACT}?subject=${encodeURIComponent('Stackt — bug report')}&body=${encodeURIComponent(body)}`
+    );
+  }, []);
 
   // Light the index entry for whatever section sits in the upper third of the viewport.
   useEffect(() => {
@@ -168,6 +195,55 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
               <EmailReminders userId={userId} userEmail={userEmail} onToast={say} />
             </section>
 
+            {/* ---------- Help & legal ---------- */}
+            <section className="set-section" id="help">
+              <div className="set-eyebrow">Help &amp; legal</div>
+              <div className="set-card">
+                <div className="set-row">
+                  <div className="set-rowhead">
+                    <div className="set-rowtext">
+                      <h3 className="set-h3">Report a bug</h3>
+                      <p className="set-desc">
+                        Something broken or behaving oddly? Send it over — the message opens
+                        pre-filled, and the more detail about what you were doing, the better.
+                      </p>
+                    </div>
+                    <a className="btn ghost set-action" href={bugReportHref}>
+                      <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d={BUG_ICON_PATH} /></svg>
+                      Report a bug
+                    </a>
+                  </div>
+                </div>
+                <div className="set-row">
+                  <div className="set-rowhead">
+                    <div className="set-rowtext">
+                      <h3 className="set-h3">Get in touch</h3>
+                      <p className="set-desc">
+                        Questions, feedback or a feature you wish existed — write to <b>{CONTACT}</b>.
+                      </p>
+                    </div>
+                    <a className="btn ghost set-action" href={`mailto:${CONTACT}`}>
+                      <svg className="ic" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 7l9 6 9-6M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+                      </svg>
+                      Send an email
+                    </a>
+                  </div>
+                </div>
+                <div className="set-row">
+                  <span className="set-label">Legal</span>
+                  <div className="set-links">
+                    {LEGAL.map((l) => (
+                      <Link key={l.href} className="set-link" href={l.href}>
+                        {l.label}
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {/* ---------- Account ---------- */}
             <section className="set-section" id="account">
               <div className="set-eyebrow">Account</div>
@@ -179,7 +255,7 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
                       <p className="set-desc">Permanently delete your account and every project. This can&apos;t be undone.</p>
                     </div>
                     {!confirmDel ? (
-                      <button className="btn danger" onClick={() => setConfirmDel(true)}>Delete…</button>
+                      <button className="btn danger set-action" onClick={() => setConfirmDel(true)}>Delete…</button>
                     ) : (
                       <div className="set-confirm">
                         <button className="btn ghost" onClick={() => setConfirmDel(false)}>Cancel</button>

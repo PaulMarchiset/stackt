@@ -1,16 +1,16 @@
 -- ============================================================
--- Stackt — schéma canonique (fresh install)
--- État de référence de la base. Pour créer un environnement neuf
--- (staging, nouveau dev), exécute CE fichier une fois.
--- Pour faire ÉVOLUER une base existante, écris une migration
--- numérotée dans supabase/migrations/ (0001, 0002, …).
+-- Stackt — canonical schema (fresh install)
+-- The reference state of the database. To create a fresh environment
+-- (staging, a new dev machine), run THIS file once.
+-- To EVOLVE an existing database, write a numbered migration in
+-- supabase/migrations/ (0001, 0002, …) instead.
 --
--- Chaque ligne est possédée par un utilisateur ; la RLS garantit
--- que chacun ne voit et ne modifie que ses propres données.
+-- Every row is owned by a user; RLS guarantees each person only ever
+-- sees and modifies their own data.
 -- ============================================================
 
--- ---------- Fonctions utilitaires ----------
--- Touche updated_at à chaque UPDATE (audit léger, utile au scaling).
+-- ---------- Utility functions ----------
+-- Touches updated_at on every UPDATE (light audit trail, useful as we scale).
 create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -24,10 +24,10 @@ create table if not exists public.projects (
   id                uuid primary key default gen_random_uuid(),
   user_id           uuid not null default auth.uid() references auth.users (id) on delete cascade,
   name              text not null default 'New project',
-  active_version_id uuid,                       -- FK ajoutée après la table versions (dépendance circulaire)
+  active_version_id uuid,                       -- FK added after the versions table (circular dependency)
   favorite          boolean not null default false,
   repo_url          text not null default '',
-  dev_mode          boolean,                    -- null = suit le défaut de l'appareil
+  dev_mode          boolean,                    -- null = follow the device default
   remind            boolean not null default false,
   position          integer not null default 0,
   created_at        timestamptz not null default now(),
@@ -41,7 +41,7 @@ create table if not exists public.versions (
   id          uuid primary key default gen_random_uuid(),
   project_id  uuid not null references public.projects (id) on delete cascade,
   name        text not null,
-  color_index smallint,                         -- index de palette 0..5 ; null = auto
+  color_index smallint,                         -- palette index 0..5; null = auto
   completed   boolean not null default false,
   position    integer not null default 0,
   created_at  timestamptz not null default now(),
@@ -51,7 +51,7 @@ create table if not exists public.versions (
 
 create index if not exists versions_project_idx on public.versions (project_id, position);
 
--- La version active d'un projet référence versions (posée maintenant que la table existe).
+-- A project's active version references versions (added now the table exists).
 alter table public.projects
   drop constraint if exists projects_active_version_id_fkey;
 alter table public.projects
@@ -71,6 +71,7 @@ create table if not exists public.cards (
   end_date    date,
   status      text not null default 'todo' check (status in ('todo','inprogress','done')),
   done        boolean not null default false,
+  done_at     timestamptz,  -- when the card was checked (drives the Done column order)
   type        text not null default 'update' check (type in ('update','bug')),
   position    integer not null default 0,
   created_at  timestamptz not null default now(),
@@ -80,6 +81,7 @@ create table if not exists public.cards (
 create index if not exists cards_project_idx on public.cards (project_id, status, position);
 create index if not exists cards_user_idx    on public.cards (user_id);
 create index if not exists cards_version_idx  on public.cards (version_id);
+create index if not exists cards_done_at_idx  on public.cards (project_id, done_at desc nulls last) where done;
 
 -- ---------- Email reminder preferences ----------
 create table if not exists public.email_prefs (
@@ -88,7 +90,7 @@ create table if not exists public.email_prefs (
   subject      text,
   horizon_days integer not null default 3 check (horizon_days between 0 and 30),
   sections     text[] not null default '{overdue,today,upcoming}'
-               check (sections <@ array['overdue','today','upcoming']),
+               check (sections <@ array['overdue','today','upcoming','undated']),
   updated_at   timestamptz not null default now()
 );
 

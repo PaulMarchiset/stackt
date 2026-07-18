@@ -20,6 +20,7 @@ export interface Card {
   end_date: string | null;    // YYYY-MM-DD — optional last day (multi-day cards)
   status: Status;
   done: boolean;
+  done_at: string | null; // ISO timestamp of when it was checked; null while open
   type: CardType;
   branch: string; // git branch name (optional; '' when unset)
   position: number;
@@ -40,14 +41,17 @@ export interface Project {
   remind: boolean; // include this project in the daily email reminder
 }
 
-export type EmailSection = 'overdue' | 'today' | 'upcoming';
+export type EmailSection = 'overdue' | 'today' | 'upcoming' | 'undated';
 
 /* Labels for the settings UI. The email's own section titles live in
-   lib/email/template.ts — changing these does not change what gets sent. */
+   lib/email/template.ts — changing these does not change what gets sent.
+   Adding a key here also needs the email_prefs.sections CHECK to allow it
+   (see supabase/migrations/0004). */
 export const EMAIL_SECTIONS: { key: EmailSection; label: string }[] = [
   { key: 'overdue', label: 'Overdue' },
   { key: 'today', label: 'Due today' },
-  { key: 'upcoming', label: 'Upcoming' }
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'undated', label: 'No date' }
 ];
 
 export interface EmailPrefs {

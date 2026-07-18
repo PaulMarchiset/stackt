@@ -89,8 +89,14 @@ export function sortByDate(cards: Card[]): Card[] {
   });
 }
 
-/* Kanban column order: unresolved bugs first, then overdue, then by date (undated last). */
-export function sortCards(cards: Card[]): Card[] {
+/* Kanban column order: unresolved bugs first, then overdue, then by date (undated last).
+   Pass `byCompletion` for the Done column: most recently checked first, so the card you
+   just ticked lands on top. Cards closed before done_at existed (or by an older client)
+   carry no stamp and sit underneath. */
+export function sortCards(cards: Card[], byCompletion = false): Card[] {
+  if (byCompletion) {
+    return cards.slice().sort((a, b) => (b.done_at || '').localeCompare(a.done_at || ''));
+  }
   const today = todayISO();
   const rank = (c: Card) =>
     c.type === 'bug' && !c.done ? 0

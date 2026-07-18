@@ -62,13 +62,13 @@ export async function GET(request: Request) {
 
   const projectIds = projects.map((p) => p.id);
 
-  // 2. Open, dated cards for those projects.
+  // 2. Open cards for those projects. Undated ones are fetched too — they feed
+  //    the optional "No date" section (renderDigest drops them otherwise).
   const { data: cards, error: cErr } = await db
     .from('cards')
     .select('id, project_id, title, target_date, done')
     .in('project_id', projectIds)
-    .eq('done', false)
-    .not('target_date', 'is', null);
+    .eq('done', false);
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
 
   // 3. Per-user preferences (a missing row means defaults).
