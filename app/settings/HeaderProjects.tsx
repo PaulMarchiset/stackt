@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { headerIslands, sortGroups } from '@/lib/headerProjects';
+import { usePersist } from '@/lib/usePersist';
 import { versionColor } from '@/lib/util';
 import {
   DEFAULT_USER_PREFS, HEADER_MODES, PALETTE,
@@ -30,6 +31,7 @@ export default function HeaderProjects({
   userId: string; onToast: (msg: string, error?: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const { persist, persistRow } = usePersist(onToast);
   const [mode, setMode] = useState<HeaderMode>(DEFAULT_USER_PREFS.header_mode);
   const [projects, setProjects] = useState<ProjRow[]>([]);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
@@ -56,19 +58,22 @@ export default function HeaderProjects({
 
   /* Every write here is one row and saves on the spot — there is no "Save" to
      forget, and the sample below updates as the row lands. */
+  const RETRY = 'Could not save — try again.';
+
   async function saveMode(next: HeaderMode) {
     const prev = mode;
     setMode(next);
-    const { error } = await supabase.from('user_prefs')
-      .upsert({ user_id: userId, header_mode: next, updated_at: new Date().toISOString() });
-    if (error) { setMode(prev); onToast('Could not save — try again.', true); }
+    void persist(
+      supabase.from('user_prefs').upsert({ user_id: userId, header_mode: next, updated_at: new Date().toISOString() }),
+      { message: RETRY, onError: () => setMode(prev) }
+    );
   }
 
   async function patchProject(id: string, patch: Partial<ProjRow>) {
     const before = projects;
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-    const { error } = await supabase.from('projects').update(patch).eq('id', id);
-    if (error) { setProjects(before); onToast('Could not save — try again.', true); }
+    void persist(supabase.from('projects').update(patch).eq('id', id),
+      { message: RETRY, onError: () => setProjects(before) });
   }
 
   async function addGroup() {
@@ -76,11 +81,13 @@ export default function HeaderProjects({
     if (!name || busy) return;
     setBusy(true);
     const position = groups.reduce((m, g) => Math.max(m, g.position), -1) + 1;
-    const { data, error } = await supabase.from('project_groups')
-      .insert({ name, position }).select().single();
+    const created = await persistRow<ProjectGroup>(
+      supabase.from('project_groups').insert({ name, position }).select().single(),
+      { message: 'Could not create the group — try again.' }
+    );
     setBusy(false);
-    if (error || !data) { onToast('Could not create the group — try again.', true); return; }
-    setGroups((gs) => [...gs, data as ProjectGroup]);
+    if (!created) return;
+    setGroups((gs) => [...gs, created]);
     setNewName('');
     if (mode !== 'groups') void saveMode('groups');   // you just made one — show it
   }
@@ -88,17 +95,20 @@ export default function HeaderProjects({
   async function patchGroup(id: string, patch: Partial<ProjectGroup>) {
     const before = groups;
     setGroups((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
-    const { error } = await supabase.from('project_groups').update(patch).eq('id', id);
-    if (error) { setGroups(before); onToast('Could not save — try again.', true); }
+    void persist(supabase.from('project_groups').update(patch).eq('id', id),
+      { message: RETRY, onError: () => setGroups(before) });
   }
 
   /* Deleting a group never touches the projects inside it — the FK sets their
      group_id to null and they reappear in the trailing island. */
   async function deleteGroup(id: string) {
+    const beforeGroups = groups, beforeProjects = projects;
     setGroups((gs) => gs.filter((g) => g.id !== id));
     setProjects((ps) => ps.map((p) => (p.group_id === id ? { ...p, group_id: null } : p)));
-    const { error } = await supabase.from('project_groups').delete().eq('id', id);
-    if (error) onToast('Could not delete the group — try again.', true);
+    void persist(supabase.from('project_groups').delete().eq('id', id), {
+      message: 'Could not delete the group — try again.',
+      onError: () => { setGroups(beforeGroups); setProjects(beforeProjects); }
+    });
   }
 
   const sample = useMemo(

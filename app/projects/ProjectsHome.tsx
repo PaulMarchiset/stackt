@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Project, ProjectGroup, Version } from '@/lib/types';
 import { versionColor, versionTheme } from '@/lib/util';
 import { sortGroups } from '@/lib/headerProjects';
 import { useDevMode } from '@/lib/useDevMode';
+import { usePersist } from '@/lib/usePersist';
+import { useToast } from '@/lib/useToast';
 import { vocab } from '@/lib/labels';
 import Modal from '@/app/board/Modal';
+import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
 import AccountMenu from '@/app/components/AccountMenu';
 import Logo from '../Logo';
@@ -56,8 +59,8 @@ export default function ProjectsHome({
   const [confirmDel, setConfirmDel] = useState<{ id: string; name: string } | null>(null);
   const [delText, setDelText] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<number>(0);
+  const { toast, showToast } = useToast();
+  const { persist, persistRow } = usePersist(showToast);
 
   // Close an open card menu on outside click / Escape.
   useEffect(() => {
@@ -80,12 +83,6 @@ export default function ProjectsHome({
   // Vocabulary for the create dialog follows the mode being chosen for the new project.
   const npV = vocab(npMode === 'default' ? devMode : npMode === 'dev');
 
-  function showToast(msg: string) {
-    setToast(msg);
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2800);
-  }
-
   // Counts reflect remaining (not-done) work, so a project card shows what's left
   // to do rather than its lifetime total.
   const counts = (id: string) => {
@@ -102,13 +99,15 @@ export default function ProjectsHome({
     if (busy) return;
     setBusy(true);
     const version = npVersion.trim();
-    const { data, error } = await supabase.from('projects').insert({
-      name: npName.trim() || 'New project',
-      repo_url: npRepo.trim(),
-      dev_mode: modeToDev(npMode)
-    }).select().single();
-    if (error || !data) { setBusy(false); showToast('Could not create project — check your connection.'); return; }
-    const project = data as Project;
+    const project = await persistRow<Project>(
+      supabase.from('projects').insert({
+        name: npName.trim() || 'New project',
+        repo_url: npRepo.trim(),
+        dev_mode: modeToDev(npMode)
+      }).select().single(),
+      { message: 'Could not create project — check your connection.' }
+    );
+    if (!project) { setBusy(false); return; }
     // Seed the first version as a real row and mark it active.
     if (version) {
       const { data: ver } = await supabase.from('versions')
@@ -123,32 +122,32 @@ export default function ProjectsHome({
     if (!confirmDel) return;
     if (delText.trim() !== (confirmDel.name || 'Untitled')) return; // name must match
     const { id } = confirmDel;
+    const removed = projects;
     setConfirmDel(null);
     setProjects((ps) => ps.filter((p) => p.id !== id));
-    const { error } = await supabase.from('projects').delete().eq('id', id);
-    if (error) { console.error('delete failed:', error); showToast('Could not delete — check your connection.'); }
+    void persist(supabase.from('projects').delete().eq('id', id), {
+      message: 'Could not delete — check your connection.',
+      onError: () => setProjects(removed)
+    });
   }
 
   async function saveEdit() {
     if (!editProj) return;
     const { id, groupId } = editProj;
     const clean = editProj.name.trim() || 'Untitled';
-    const dev_mode = modeToDev(editProj.mode);
-    const patch = { name: clean, dev_mode, group_id: groupId };
+    const patch = { name: clean, dev_mode: modeToDev(editProj.mode), group_id: groupId };
+    const before = projects;
     setEditProj(null);
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-    const { error } = await supabase.from('projects').update(patch).eq('id', id);
-    if (error) { console.error('save failed:', error); showToast('Could not save — check your connection.'); }
+    void persist(supabase.from('projects').update(patch).eq('id', id), { onError: () => setProjects(before) });
   }
 
   async function toggleFavorite(id: string, next: boolean) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: next } : p)));
-    const { error } = await supabase.from('projects').update({ favorite: next }).eq('id', id);
-    if (error) {
-      console.error('favorite update failed:', error);
-      setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: !next } : p))); // revert
-      showToast('Could not update favorite — check your connection.');
-    }
+    void persist(supabase.from('projects').update({ favorite: next }).eq('id', id), {
+      message: 'Could not update favorite — check your connection.',
+      onError: () => setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, favorite: !next } : p)))
+    });
   }
 
   const projectCard = (p: Project) => {
@@ -311,7 +310,7 @@ export default function ProjectsHome({
         );
       })()}
 
-      {toast && <div className="toast show error">{toast}</div>}
+      <Toast toast={toast} />
     </div>
   );
 }

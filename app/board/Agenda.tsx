@@ -37,8 +37,8 @@ export default function Agenda({
   const v = vocab(devMode);
   const versionById = new Map(versions.map((z) => [z.id, z] as const));
   const today = todayISO();
-  const isNew = !!editing && editing.startsWith('__new__');
-  const editCard = editing && !isNew ? cards.find((c) => c.id === editing) : undefined;
+  const isNew = editing?.kind === 'new';
+  const editCard = editing?.kind === 'edit' ? cards.find((c) => c.id === editing.id) : undefined;
 
   const byAsc = (a: Card, b: Card) => (a.target_date! < b.target_date! ? -1 : a.target_date! > b.target_date! ? 1 : 0);
   const dated = cards.filter((c) => c.target_date);

@@ -2,20 +2,19 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Card, CardDraft, Project, Status, Version } from '@/lib/types';
+import type { Card, CardDraft, EditTarget, Project, Status, Version } from '@/lib/types';
 import type { ImportBlock } from '@/lib/importText';
-
-export type SaveState = 'saved' | 'saving' | 'error';
-export type Toast = { msg: string; err?: boolean };
+import { usePersist } from '@/lib/usePersist';
+import { useToast } from '@/lib/useToast';
 
 /**
  * The board's data layer: the three tables held in React state, plus every
  * mutation that writes them back to Supabase.
  *
  * Everything here is optimistic — local state moves first, the write follows,
- * and a failure surfaces as `saving: 'error'` + a toast. That keeps the UI
- * instant, at the cost of a failed write leaving the screen ahead of the
- * database until the next reload (see the note in README).
+ * and a failure surfaces as `saving: 'error'` + a toast. That machinery is
+ * shared with every other screen (lib/usePersist · lib/useToast); what lives
+ * here is only what the board's three tables mean.
  *
  * BoardApp owns *view* state (what's open, what's filtered) and calls in here
  * for anything that touches data — so the two never tangle again.
@@ -27,22 +26,8 @@ export function useBoardStore(
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [versions, setVersions] = useState<Version[]>(initialVersions);
-  const [saving, setSaving] = useState<SaveState>('saved');
-  const [toast, setToast] = useState<Toast | null>(null);
-  const toastTimer = useRef<number>(0);
-
-  function showToast(msg: string, err = false) {
-    setToast({ msg, err });
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
-  }
-
-  async function persist(p: PromiseLike<{ error: unknown }>) {
-    setSaving('saving');
-    const { error } = await p;
-    if (error) { setSaving('error'); showToast('Could not save — check your connection.', true); }
-    else setSaving('saved');
-  }
+  const { toast, showToast } = useToast();
+  const { saving, persist, persistRow } = usePersist(showToast);
 
   /* ---------- Projects ---------- */
   function patchProject(id: string, patch: Partial<Project>) {
@@ -96,11 +81,10 @@ export function useBoardStore(
       target_date: values.target_date ?? null, end_date: values.end_date ?? null,
       status, ...doneFields(status === 'done'), type: values.type ?? 'update', branch: values.branch ?? ''
     };
-    setSaving('saving');
-    const { data, error } = await supabase.from('cards').insert(row).select().single();
-    if (error || !data) { setSaving('error'); showToast('Could not add card', true); return; }
-    setSaving('saved');
-    setCards((cs) => [...cs, data as Card]);
+    const created = await persistRow(
+      supabase.from('cards').insert(row).select().single(), { message: 'Could not add card' }
+    );
+    if (created) setCards((cs) => [...cs, created as Card]);
   }
 
   function patchCard(id: string, patch: Partial<Card>) {
@@ -155,12 +139,12 @@ export function useBoardStore(
     const existing = mine.find((z) => z.name === trimmed);
     if (existing) return existing;
     const position = mine.reduce((m, z) => Math.max(m, z.position), -1) + 1;
-    setSaving('saving');
-    const { data, error } = await supabase.from('versions')
-      .insert({ project_id: projectId, name: trimmed, position }).select().single();
-    if (error || !data) { setSaving('error'); showToast('Could not add version', true); return null; }
-    setSaving('saved');
-    const ver = data as Version;
+    const created = await persistRow(
+      supabase.from('versions').insert({ project_id: projectId, name: trimmed, position }).select().single(),
+      { message: 'Could not add version' }
+    );
+    if (!created) return null;
+    const ver = created as Version;
     setVersions((vs) => [...vs, ver]);
     return ver;
   }
@@ -173,23 +157,30 @@ export function useBoardStore(
     void persist(supabase.from('versions').delete().eq('id', id));
   }
 
-  /* Rename a version. If the new name already exists in the project, this MERGES:
-     the version's cards move onto the target and the old row is deleted. */
+  /* Fold `fromId` into `toId`: its cards move onto the target, then the emptied
+     version is deleted. The active version follows the cards, so a board whose
+     selected version just disappeared lands on the one that absorbed it. */
+  function mergeVersion(project: Project, fromId: string, toId: string) {
+    if (fromId === toId) return;
+    setCards((cs) => cs.map((c) => (c.version_id === fromId ? { ...c, version_id: toId } : c)));
+    void persist(supabase.from('cards').update({ version_id: toId }).eq('version_id', fromId));
+    setVersions((vs) => vs.filter((z) => z.id !== fromId));
+    if (project.active_version_id === fromId) patchProject(project.id, { active_version_id: toId });
+    void persist(supabase.from('versions').delete().eq('id', fromId));
+  }
+
+  /* Rename a version. Typing a name this project already uses is how you merge
+     from the rename field — the alternative is refusing the edit or writing a
+     duplicate the unique (project_id, name) would reject anyway. It delegates,
+     so "merge" has one implementation whichever way you reach it. */
   function renameVersion(project: Project, id: string, raw: string) {
     const ver = versions.find((z) => z.id === id);
     const newV = raw.trim();
     if (!ver || !newV || newV === ver.name) return;
     const target = projectVersions(project.id).find((z) => z.name === newV && z.id !== id);
-    if (target) {
-      setCards((cs) => cs.map((c) => (c.version_id === id ? { ...c, version_id: target.id } : c)));
-      void persist(supabase.from('cards').update({ version_id: target.id }).eq('version_id', id));
-      setVersions((vs) => vs.filter((z) => z.id !== id));
-      if (project.active_version_id === id) patchProject(project.id, { active_version_id: target.id });
-      void persist(supabase.from('versions').delete().eq('id', id));
-    } else {
-      setVersions((vs) => vs.map((z) => (z.id === id ? { ...z, name: newV } : z)));
-      void persist(supabase.from('versions').update({ name: newV }).eq('id', id));
-    }
+    if (target) { mergeVersion(project, id, target.id); return; }
+    setVersions((vs) => vs.map((z) => (z.id === id ? { ...z, name: newV } : z)));
+    void persist(supabase.from('versions').update({ name: newV }).eq('id', id));
   }
 
   function setVersionColor(id: string, idx: number) {
@@ -223,11 +214,9 @@ export function useBoardStore(
   }
 
   /* Card-editor submissions carry a version *name*; resolve it to an id (creating
-     the version if the user typed a new one) before writing the card. */
-  async function submitCard(
-    projectId: string, vals: CardDraft,
-    target: { kind: 'new'; status: Status } | { kind: 'edit'; id: string }
-  ) {
+     the version if the user typed a new one) before writing the card. `target` is
+     the board's own EditTarget, handed straight through. */
+  async function submitCard(projectId: string, vals: CardDraft, target: EditTarget) {
     const ver = await ensureVersion(projectId, vals.versionName ?? '');
     const payload: CardDraft = { ...vals, version_id: ver?.id ?? null };
     delete payload.versionName;
@@ -253,12 +242,12 @@ export function useBoardStore(
       }
     }
     if (!rows.length) return 0;
-    setSaving('saving');
-    const { data, error } = await supabase.from('cards').insert(rows).select();
-    if (error || !data) { setSaving('error'); showToast('Could not import — check your connection.', true); return 0; }
-    setSaving('saved');
-    setCards((cs) => [...cs, ...(data as Card[])]);
-    return data.length;
+    const created = await persistRow(
+      supabase.from('cards').insert(rows).select(), { message: 'Could not import — check your connection.' }
+    );
+    if (!created) return 0;
+    setCards((cs) => [...cs, ...(created as Card[])]);
+    return (created as Card[]).length;
   }
 
   return {
@@ -266,7 +255,7 @@ export function useBoardStore(
     setProjects,   // local-only edits (the project-name input types before it saves)
     patchProject, moveProjectBefore, commitProjectOrder,
     addCard, patchCard, deleteCard, moveCard, toggleDone, rescheduleCard, submitCard, importBlocks,
-    ensureVersion, renameVersion, deleteVersion, setVersionColor, setVersionShipDate, toggleVersionCompleted
+    ensureVersion, renameVersion, mergeVersion, deleteVersion, setVersionColor, setVersionShipDate, toggleVersionCompleted
   };
 }
 

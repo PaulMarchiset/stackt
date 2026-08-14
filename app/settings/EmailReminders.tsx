@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { usePersist } from '@/lib/usePersist';
 import { defaultSubject, renderDigest, weekdayOf } from '@/lib/email/template';
 import { localTimeZone, sendWindow, versionTheme } from '@/lib/util';
 import {
@@ -34,6 +35,7 @@ export default function EmailReminders({
   userId: string; userEmail: string; onToast: (msg: string, error?: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const { persist } = usePersist(onToast);
   const [projects, setProjects] = useState<ProjRow[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [versions, setVersions] = useState<VersionRow[]>([]);
@@ -81,11 +83,10 @@ export default function EmailReminders({
 
   async function toggleProject(id: string, next: boolean) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: next } : p)));
-    const { error } = await supabase.from('projects').update({ remind: next }).eq('id', id);
-    if (error) {
-      setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)));
-      onToast('Could not update that project — try again.', true);
-    }
+    void persist(supabase.from('projects').update({ remind: next }).eq('id', id), {
+      message: 'Could not update that project — try again.',
+      onError: () => setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)))
+    });
   }
 
   function toggleSection(key: EmailSection) {
@@ -101,7 +102,7 @@ export default function EmailReminders({
 
   async function savePrefs() {
     setBusy(true);
-    const { error } = await supabase.from('email_prefs').upsert({
+    const ok = await persist(supabase.from('email_prefs').upsert({
       user_id: userId,
       enabled,
       subject: subject.trim() || null,
@@ -109,9 +110,9 @@ export default function EmailReminders({
       sections,
       days,
       updated_at: new Date().toISOString()
-    });
+    }), { message: 'Could not save — try again.' });
     setBusy(false);
-    onToast(error ? 'Could not save — try again.' : 'Reminder settings saved', !!error);
+    if (ok) onToast('Reminder settings saved');
   }
 
   const today = parisToday();

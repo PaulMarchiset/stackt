@@ -80,8 +80,8 @@ export default function Timeline({
     if (!e.currentTarget.contains(e.relatedTarget as Node)) clearHighlight();
   };
   const today = todayISO();
-  const isNew = !!editing && editing.startsWith('__new__');
-  const editCard = editing && !isNew ? cards.find((c) => c.id === editing) : undefined;
+  const isNew = editing?.kind === 'new';
+  const editCard = editing?.kind === 'edit' ? cards.find((c) => c.id === editing.id) : undefined;
 
   // Build the day range from the earliest start to the latest end, with a week of room on
   // each side — the leading days give some context just before today/the first card.
@@ -212,7 +212,7 @@ export default function Timeline({
         onDragEnd={(e) => { e.currentTarget.classList.remove('dragging'); clearHighlight(); }}
         className={'cal-bar' + (c.done ? ' done' : '') + (c.type === 'bug' ? ' is-bug' : '')
           + (multi ? ' multi' : '') + (c.target_date ? '' : ' nodate')
-          + (ci != null ? ' card-theme-' + ci : '') + (editing === c.id ? ' editing' : '')}>
+          + (ci != null ? ' card-theme-' + ci : '') + (editCard?.id === c.id ? ' editing' : '')}>
         <span className="cal-bar-accent" />
         <div className="cal-bar-main">
           <button className={'checkbox' + (c.done ? ' checked' : '')} title="Mark done" onClick={() => onToggle(c.id)}>

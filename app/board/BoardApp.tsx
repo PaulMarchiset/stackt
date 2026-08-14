@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type HeaderMode, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
+import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderMode, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
 import { headerIslands } from '@/lib/headerProjects';
 import { useBoardStore } from '@/lib/useBoardStore';
@@ -10,8 +10,10 @@ import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
 import { BoardDevModeContext } from '@/lib/devModeContext';
 import Sheet from '@/app/components/Sheet';
+import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
 import NotifBell from '@/app/components/NotifBell';
+import { ConfirmDialog, PromptDialog } from '@/app/components/Dialog';
 import { IconPlus, IconRepo } from '@/app/components/icons';
 import CardEditor from './CardEditor';
 import ImportDialog from './ImportDialog';
@@ -23,7 +25,6 @@ import VersionBar, { type TypeFilter, type VersionPopAnchor } from './VersionBar
 import { VersionPopover, VersionSheet, pendingVersionName } from './VersionMenu';
 import { MobileTopbar, Topbar, type BoardView } from './BoardHeader';
 
-type EditTarget = string | null; // card id, or `__new__:status`, or null
 type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: string } | null;
 
 /**
@@ -51,7 +52,7 @@ export default function BoardApp({
     ? initialActiveId : initialProjects[0]?.id ?? null;
   const [activeId, setActiveId] = useState<string | null>(firstActive);
   const [view, setView] = useState<BoardView>('board');
-  const [editing, setEditing] = useState<EditTarget>(null);
+  const [editing, setEditing] = useState<EditTarget | null>(null);
   const [newCardType, setNewCardType] = useState<CardType>('update');
   const [newCardDate, setNewCardDate] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -62,12 +63,11 @@ export default function BoardApp({
 
   // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
   const [sheet, setSheet] = useState<MobileSheet>(null);
-  // In-app dialogs (replace native prompt/confirm).
+  /* In-app dialogs (replace native prompt/confirm). Each is one piece of state:
+     either it's open or it isn't, and <PromptDialog> owns whatever is typed. */
   const [repoEdit, setRepoEdit] = useState(false);
-  const [repoDraft, setRepoDraft] = useState('');
   const [addVerOpen, setAddVerOpen] = useState(false);
-  const [verDraft, setVerDraft] = useState('');
-  const [mergeConfirm, setMergeConfirm] = useState<{ fromId: string; fromName: string; toName: string } | null>(null);
+  const [mergeConfirm, setMergeConfirm] = useState<{ fromId: string; fromName: string; toId: string; toName: string } | null>(null);
   const [delVerConfirm, setDelVerConfirm] = useState<{ id: string; name: string } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const dragProj = useRef<string | null>(null);
@@ -114,6 +114,10 @@ export default function BoardApp({
   const devMode = project?.dev_mode ?? defaultDevMode;
   const v = vocab(devMode);
 
+  /* What `editing` means, asked rather than parsed. */
+  const editingCard = (id: string) => editing?.kind === 'edit' && editing.id === id;
+  const addingIn = (status: Status) => editing?.kind === 'new' && editing.status === status;
+
   /* ---------- Actions that mix view state with the store ---------- */
   function selectProject(id: string) { setActiveId(id); setEditing(null); }
   function setActiveVersion(id: string | null) {
@@ -124,20 +128,15 @@ export default function BoardApp({
     window.setTimeout(() => setJustMoved(null), 420);
     store.moveCard(id, status);
   }
-  function openRepoEdit() { setRepoDraft(project?.repo_url || ''); setRepoEdit(true); }
-  function saveRepo() { if (project) store.patchProject(project.id, { repo_url: repoDraft.trim() }); setRepoEdit(false); }
-  function openAddVersion() {
-    if (!project) return;
-    setVerDraft(devMode ? suggestNextVersion(projVersions.map((z) => z.name)) : '');
-    setAddVerOpen(true);
+  function saveRepo(url: string) {
+    if (project) store.patchProject(project.id, { repo_url: url.trim() });
+    setRepoEdit(false);
   }
-  function confirmAddVersion() {
+  function confirmAddVersion(label: string) {
     if (!project) return;
-    const label = verDraft.trim();
-    if (!label) return;
     setAddVerOpen(false);
     setEditing(null);
-    void store.ensureVersion(project.id, label).then((ver) => { if (ver) setActiveVersion(ver.id); });
+    void store.ensureVersion(project.id, label.trim()).then((ver) => { if (ver) setActiveVersion(ver.id); });
   }
   const createVersion = (name: string) => (project ? store.ensureVersion(project.id, name) : Promise.resolve(null));
 
@@ -176,7 +175,7 @@ export default function BoardApp({
         if (from && islandOf.get(from) === islandOf.get(overId)) store.moveProjectBefore(from, overId);
       }}
       onDropTab={() => { dragProj.current = null; store.commitProjectOrder(); }}
-      onView={setView} onOpenRepo={openRepoEdit} />
+      onView={setView} onOpenRepo={() => setRepoEdit(true)} />
   );
 
   if (!project) {
@@ -199,25 +198,25 @@ export default function BoardApp({
   const timelineProps: TimelineViewProps = {
     project, projCards, versions: projVersions, cards: scopedCards,
     editing, newCardDate,
-    onAdd: (date: string) => { setNewCardType('update'); setNewCardDate(date); setEditing('__new__:todo'); },
-    onEdit: (id: string) => setEditing(id),
+    onAdd: (date: string) => { setNewCardType('update'); setNewCardDate(date); setEditing({ kind: 'new', status: 'todo' }); },
+    onEdit: (id: string) => setEditing({ kind: 'edit', id }),
     onToggle: store.toggleDone,
     onMenu: (id: string) => setSheet({ kind: 'card', id }),
     onReschedule: store.rescheduleCard,
     onCreateVersion: createVersion,
+    // The edit target is exactly what the store needs to know — hand it over.
     onSubmit: (vals: CardDraft) => {
-      if (editing && editing.startsWith('__new__')) void store.submitCard(project.id, vals, { kind: 'new', status: 'todo' });
-      else if (editing) void store.submitCard(project.id, vals, { kind: 'edit', id: editing });
+      if (editing) void store.submitCard(project.id, vals, editing);
       setEditing(null);
     },
     onCancel: () => setEditing(null)
   };
 
   // On mobile the board editor is a bottom-sheet Modal (not inline in a snapping column).
-  const mobileEditColumn = isMobile && view === 'board' && editing?.startsWith('__new__:')
-    ? (editing.split(':')[1] as Status) : null;
-  const mobileEditCard = isMobile && view === 'board' && editing && !editing.startsWith('__new__')
-    ? projCards.find((c) => c.id === editing) : null;
+  const mobileEdit = isMobile && view === 'board' ? editing : null;
+  const mobileEditColumn = mobileEdit?.kind === 'new' ? mobileEdit.status : null;
+  const mobileEditCard = mobileEdit?.kind === 'edit'
+    ? projCards.find((c) => c.id === mobileEdit.id) : null;
 
   const popVersion = verPop ? versionById.get(verPop.id) ?? null : null;
   const menuActions = popVersion && {
@@ -227,7 +226,13 @@ export default function BoardApp({
     // Setting a ship date leaves the menu open — you often set it while also
     // recolouring or renaming, and closing on every pick would fight that.
     onShipDate: (date: string | null) => store.setVersionShipDate(popVersion.id, date),
-    onMerge: (toName: string) => { setMergeConfirm({ fromId: popVersion.id, fromName: popVersion.name, toName }); setVerPop(null); },
+    /* The menu offers names (they're what the user picked from); the merge itself
+       works on ids, so resolve it here rather than making the store match names. */
+    onMerge: (toName: string) => {
+      const to = projVersions.find((z) => z.name === toName);
+      if (to) setMergeConfirm({ fromId: popVersion.id, fromName: popVersion.name, toId: to.id, toName: to.name });
+      setVerPop(null);
+    },
     onDelete: () => { setDelVerConfirm({ id: popVersion.id, name: popVersion.name }); setVerPop(null); },
     onClose: () => { store.renameVersion(project, popVersion.id, pendingVersionName()); setVerPop(null); }
   };
@@ -268,7 +273,7 @@ export default function BoardApp({
         showCompleted={showCompleted} typeFilter={typeFilter}
         onSelect={setActiveVersion}
         onOptions={setVerPop}
-        onAdd={openAddVersion}
+        onAdd={() => setAddVerOpen(true)}
         onShowCompleted={setShowCompleted}
         onTypeFilter={(next) => { setTypeFilter(next); setEditing(null); }} />
 
@@ -305,7 +310,7 @@ export default function BoardApp({
                     </div>
                     <div className="cards">
                       {colCards.map((c, i) =>
-                        editing === c.id && !isMobile
+                        editingCard(c.id) && !isMobile
                           ? <CardEditor key={c.id} versions={projVersions} card={c} status={c.status}
                               onCreateVersion={createVersion}
                               onCancel={() => setEditing(null)}
@@ -314,22 +319,22 @@ export default function BoardApp({
                               version={c.version_id ? versionById.get(c.version_id) ?? null : null}
                               justMoved={c.id === justMoved} isMobile={isMobile}
                               onToggleDone={() => store.toggleDone(c.id)}
-                              onEdit={() => setEditing(c.id)}
+                              onEdit={() => setEditing({ kind: 'edit', id: c.id })}
                               onDelete={() => store.deleteCard(c.id)}
                               onMenu={() => setSheet({ kind: 'card', id: c.id })}
                               onReschedule={(start, end) => store.patchCard(c.id, { target_date: start, end_date: end })} />
                       )}
-                      {!isMobile && editing === `__new__:${col.key}` && (
+                      {!isMobile && addingIn(col.key) && (
                         <CardEditor key="__new__" versions={projVersions} status={col.key} defaultType={newCardType}
                           defaultDate={newCardDate} defaultVersion={versionName(active)}
                           onCreateVersion={createVersion}
                           onCancel={() => setEditing(null)}
                           onSubmit={(vals) => { void store.submitCard(project.id, vals, { kind: 'new', status: col.key }); setEditing(null); }} />
                       )}
-                      {colCards.length === 0 && editing !== `__new__:${col.key}` && <div className="empty-hint">Nothing here yet</div>}
+                      {colCards.length === 0 && !addingIn(col.key) && <div className="empty-hint">Nothing here yet</div>}
                     </div>
                     <button className={'add-card' + (addingBug ? ' add-bug' : '')}
-                      onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing(`__new__:${col.key}`); }}>
+                      onClick={() => { setNewCardType(addingBug ? 'bug' : 'update'); setNewCardDate(''); setEditing({ kind: 'new', status: col.key }); }}>
                       <IconPlus />
                       {addingBug ? `Add ${v.bugNoun}` : `Add ${v.updateNoun}`}
                     </button>
@@ -358,73 +363,41 @@ export default function BoardApp({
       )}
 
       {repoEdit && (
-        <Modal title="Git repository" className="modal-wide modal-center" onClose={() => setRepoEdit(false)}>
-          <div className="modal-form">
-            <label className="modal-form-label">Repository URL</label>
-            <input className="modal-form-input" autoFocus spellCheck={false} inputMode="url"
-              placeholder="https://github.com/org/repo" value={repoDraft}
-              onChange={(e) => setRepoDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveRepo(); if (e.key === 'Escape') setRepoEdit(false); }} />
-            <p className="modal-form-hint">Turns each card&apos;s branch into a clickable link (GitHub, GitLab, Bitbucket).</p>
-            <div className="edit-actions">
-              {project.repo_url && (
-                <a className="btn ghost repo-open" target="_blank" rel="noopener noreferrer"
-                  href={/^https?:\/\//i.test(project.repo_url) ? project.repo_url : 'https://' + project.repo_url}>Open ↗</a>
-              )}
-              <div className="meta-spacer" />
-              <button className="btn ghost" onClick={() => setRepoEdit(false)}>Cancel</button>
-              <button className="btn solid" onClick={saveRepo}>Save</button>
-            </div>
-          </div>
-        </Modal>
+        <PromptDialog title="Git repository" className="modal-wide modal-center"
+          label="Repository URL" placeholder="https://github.com/org/repo" inputMode="url"
+          defaultValue={project.repo_url || ''} submitLabel="Save"
+          hint="Turns each card's branch into a clickable link (GitHub, GitLab, Bitbucket)."
+          actionsLeft={project.repo_url && (
+            <a className="btn ghost repo-open" target="_blank" rel="noopener noreferrer"
+              href={/^https?:\/\//i.test(project.repo_url) ? project.repo_url : 'https://' + project.repo_url}>Open ↗</a>
+          )}
+          onSubmit={saveRepo} onCancel={() => setRepoEdit(false)} />
       )}
 
       {addVerOpen && (
-        <Modal title={`New ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setAddVerOpen(false)}>
-          <div className="modal-form">
-            <label className="modal-form-label">{`${v.version} label`}</label>
-            <input className="modal-form-input" autoFocus spellCheck={false} placeholder={`e.g. ${v.versionExample}`}
-              value={verDraft} onChange={(e) => setVerDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') confirmAddVersion(); if (e.key === 'Escape') setAddVerOpen(false); }} />
-            <p className="modal-form-hint">{`Groups ${v.updates.toLowerCase()} under a ${v.version.toLowerCase()}. You can rename or recolor it later.`}</p>
-            <div className="edit-actions">
-              <div className="meta-spacer" />
-              <button className="btn ghost" onClick={() => setAddVerOpen(false)}>Cancel</button>
-              <button className="btn solid" onClick={confirmAddVersion}>Add</button>
-            </div>
-          </div>
-        </Modal>
+        <PromptDialog title={`New ${v.version.toLowerCase()}`}
+          label={`${v.version} label`} placeholder={`e.g. ${v.versionExample}`}
+          defaultValue={devMode ? suggestNextVersion(projVersions.map((z) => z.name)) : ''}
+          submitLabel="Add" required
+          hint={`Groups ${v.updates.toLowerCase()} under a ${v.version.toLowerCase()}. You can rename or recolor it later.`}
+          onSubmit={confirmAddVersion} onCancel={() => setAddVerOpen(false)} />
       )}
 
       {mergeConfirm && (
-        <Modal title={`${v.merge} ${v.versions.toLowerCase()}`} className="modal-center" onClose={() => setMergeConfirm(null)}>
-          <div className="modal-form">
-            <p className="modal-form-hint">
-              Move every card from <strong>“{mergeConfirm.fromName}”</strong> into <strong>“{mergeConfirm.toName}”</strong>,
-              then delete <strong>“{mergeConfirm.fromName}”</strong>. This can&apos;t be undone.
-            </p>
-            <div className="edit-actions">
-              <div className="meta-spacer" />
-              <button className="btn ghost" onClick={() => setMergeConfirm(null)}>Cancel</button>
-              <button className="btn solid" onClick={() => { store.renameVersion(project, mergeConfirm.fromId, mergeConfirm.toName); setMergeConfirm(null); }}>{v.merge}</button>
-            </div>
-          </div>
-        </Modal>
+        <ConfirmDialog title={`${v.merge} ${v.versions.toLowerCase()}`} confirmLabel={v.merge}
+          onConfirm={() => { store.mergeVersion(project, mergeConfirm.fromId, mergeConfirm.toId); setMergeConfirm(null); }}
+          onCancel={() => setMergeConfirm(null)}>
+          Move every card from <strong>“{mergeConfirm.fromName}”</strong> into <strong>“{mergeConfirm.toName}”</strong>,
+          then delete <strong>“{mergeConfirm.fromName}”</strong>. This can&apos;t be undone.
+        </ConfirmDialog>
       )}
 
       {delVerConfirm && (
-        <Modal title={`Delete ${v.version.toLowerCase()}`} className="modal-center" onClose={() => setDelVerConfirm(null)}>
-          <div className="modal-form">
-            <p className="modal-form-hint">
-              Delete <strong>“{delVerConfirm.name}”</strong>? Its cards are kept but lose this {v.version.toLowerCase()} label. This can&apos;t be undone.
-            </p>
-            <div className="edit-actions">
-              <div className="meta-spacer" />
-              <button className="btn ghost" onClick={() => setDelVerConfirm(null)}>Cancel</button>
-              <button className="btn danger-solid" onClick={() => { store.deleteVersion(project, delVerConfirm.id); setDelVerConfirm(null); }}>Delete</button>
-            </div>
-          </div>
-        </Modal>
+        <ConfirmDialog title={`Delete ${v.version.toLowerCase()}`} confirmLabel="Delete" danger
+          onConfirm={() => { store.deleteVersion(project, delVerConfirm.id); setDelVerConfirm(null); }}
+          onCancel={() => setDelVerConfirm(null)}>
+          Delete <strong>“{delVerConfirm.name}”</strong>? Its cards are kept but lose this {v.version.toLowerCase()} label. This can&apos;t be undone.
+        </ConfirmDialog>
       )}
 
       {sheet?.kind === 'project' && (
@@ -460,7 +433,7 @@ export default function BoardApp({
               onClick={() => store.patchProject(project.id, { remind: !project.remind })}><span /></button>
           </div>
           {devMode && (
-            <button className="sheet-item" onClick={() => { setSheet(null); openRepoEdit(); }}>
+            <button className="sheet-item" onClick={() => { setSheet(null); setRepoEdit(true); }}>
               <span className="sheet-item-main"><IconRepo /> Git repository</span>
               <span className="sheet-item-note">{project.repo_url ? 'Linked' : 'Not set'}</span>
             </button>
@@ -492,7 +465,7 @@ export default function BoardApp({
                 </button>
               ))}
             </div>
-            <button className="sheet-item" onClick={() => { setEditing(c.id); setSheet(null); }}>Edit</button>
+            <button className="sheet-item" onClick={() => { setEditing({ kind: 'edit', id: c.id }); setSheet(null); }}>Edit</button>
             <button className="sheet-item danger" onClick={() => { store.deleteCard(c.id); setSheet(null); }}>Delete</button>
           </Sheet>
         );
@@ -519,13 +492,13 @@ export default function BoardApp({
             if (view === 'timeline') { timelineProps.onAdd(todayISO()); return; }
             setNewCardType(typeFilter === 'bug' ? 'bug' : 'update');
             setNewCardDate('');
-            setEditing(`__new__:${COLUMNS[activeCol]?.key ?? 'todo'}`);
+            setEditing({ kind: 'new', status: COLUMNS[activeCol]?.key ?? 'todo' });
           }}>
           <IconPlus />
         </button>
       )}
 
-      {toast && <div className={'toast show' + (toast.err ? ' error' : '')}>{toast.msg}</div>}
+      <Toast toast={toast} />
       <WhatsNew />
     </div>
     </BoardDevModeContext.Provider>

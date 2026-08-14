@@ -32,6 +32,14 @@ export interface Card {
    (resolved to a version_id before persisting; '' means "no version"). */
 export type CardDraft = Partial<Card> & { versionName?: string };
 
+/* What the board is editing right now — an existing card, or a new one headed
+   for a given column. `null` (the state, not this type) means nothing is open.
+   The store's submitCard takes the same value, so the board hands its edit
+   target straight through instead of re-deriving what the user is doing. */
+export type EditTarget =
+  | { kind: 'edit'; id: string }
+  | { kind: 'new'; status: Status };
+
 export interface Project {
   id: string;
   name: string;
@@ -137,7 +145,7 @@ export interface TimelineViewProps {
   projCards: Card[];        // every card of the project (unfiltered)
   versions: Version[];      // this project's versions, in display order
   cards: Card[];            // the cards in scope (version + type filters applied)
-  editing: string | null;
+  editing: EditTarget | null;
   newCardDate: string;
   onAdd: (date: string) => void;
   onEdit: (id: string) => void;

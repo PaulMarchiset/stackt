@@ -1,13 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Logo from '@/app/Logo';
 import AccountMenu from '@/app/components/AccountMenu';
+import Toast from '@/app/components/Toast';
 import EmailReminders from './EmailReminders';
 import HeaderProjects from './HeaderProjects';
 import { createClient } from '@/lib/supabase/client';
 import { useDevMode } from '@/lib/useDevMode';
+import { useToast } from '@/lib/useToast';
 import { CHANGELOG_VERSION } from '@/lib/changelog';
 import { BUG_ICON_PATH } from '@/app/components/TypeTag';
 
@@ -50,16 +52,9 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
   /* Built after mount: the user agent is only knowable in the browser, and a
      server/client mismatch would trip hydration. Falls back to a bare mailto. */
   const [bugReportHref, setBugReportHref] = useState(`mailto:${CONTACT}`);
-  const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
-  const toastTimer = useRef<number>(0);
-
-  const say = useCallback((msg: string, error = false) => {
-    setToast({ msg, error });
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2800);
-  }, []);
-
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  /* Every section on this page reports through the same toast — it's owned here
+     so it outlives whichever section raised it. */
+  const { toast, showToast: say } = useToast();
 
   /* A bug report is far more useful with the browser and build attached, so we
      pre-fill them — visibly, in the body the user can read and edit before
@@ -280,7 +275,7 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
         </div>
       </div>
 
-      {toast && <div className={'toast show' + (toast.error ? ' error' : '')}>{toast.msg}</div>}
+      <Toast toast={toast} />
     </div>
   );
 }
