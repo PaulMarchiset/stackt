@@ -2,14 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { defaultSubject, renderDigest } from '@/lib/email/template';
+import { defaultSubject, renderDigest, weekdayOf } from '@/lib/email/template';
 import { localTimeZone, sendWindow, versionTheme } from '@/lib/util';
 import {
-  DEFAULT_EMAIL_PREFS, EMAIL_SECTIONS,
-  type Card, type EmailPrefs, type EmailSection, type Project
+  DEFAULT_EMAIL_PREFS, EMAIL_SECTIONS, EVERY_DAY, WEEKDAYS, WEEKDAYS_ONLY,
+  type Card, type EmailPrefs, type EmailSection, type Project, type Version
 } from '@/lib/types';
 
 type ProjRow = Pick<Project, 'id' | 'name' | 'remind'>;
+type VersionRow = Pick<Version, 'id' | 'project_id' | 'name' | 'ship_date' | 'completed'>;
+
+const sameDays = (a: number[], b: number[]) =>
+  a.length === b.length && [...a].sort().join() === [...b].sort().join();
 
 /* Today in Europe/Paris (matches the cron's reference), as YYYY-MM-DD. */
 function parisToday(): string {
@@ -32,10 +36,12 @@ export default function EmailReminders({
   const supabase = useMemo(() => createClient(), []);
   const [projects, setProjects] = useState<ProjRow[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [versions, setVersions] = useState<VersionRow[]>([]);
   const [enabled, setEnabled] = useState(DEFAULT_EMAIL_PREFS.enabled);
   const [subject, setSubject] = useState('');
   const [horizon, setHorizon] = useState(DEFAULT_EMAIL_PREFS.horizon_days);
   const [sections, setSections] = useState<EmailSection[]>(DEFAULT_EMAIL_PREFS.sections);
+  const [days, setDays] = useState<number[]>(DEFAULT_EMAIL_PREFS.days);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [schemaError, setSchemaError] = useState(false);
@@ -48,21 +54,25 @@ export default function EmailReminders({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [projRes, prefRes, cardRes] = await Promise.all([
+      const [projRes, prefRes, cardRes, verRes] = await Promise.all([
         supabase.from('projects').select('id, name, remind').order('position').order('created_at'),
         supabase.from('email_prefs').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('cards').select('id, project_id, title, target_date, done').eq('done', false)
+        supabase.from('cards').select('id, project_id, title, target_date, done').eq('done', false),
+        supabase.from('versions').select('id, project_id, name, ship_date, completed')
+          .eq('completed', false).not('ship_date', 'is', null)
       ]);
       if (!alive) return;
       if (projRes.error || prefRes.error) setSchemaError(true);
       setProjects((projRes.data as ProjRow[]) || []);
       setCards((cardRes.data as Card[]) || []);
+      setVersions((verRes.data as VersionRow[]) || []);
       const pref = prefRes.data;
       if (pref) {
         setEnabled(pref.enabled);
         setSubject(pref.subject || '');
         setHorizon(pref.horizon_days);
         setSections((pref.sections as EmailSection[]) || DEFAULT_EMAIL_PREFS.sections);
+        setDays((pref.days as number[]) || DEFAULT_EMAIL_PREFS.days);
       }
       setLoading(false);
     })();
@@ -82,6 +92,13 @@ export default function EmailReminders({
     setSections((s) => (s.includes(key) ? s.filter((x) => x !== key) : [...s, key]));
   }
 
+  /* Turning off the last day would silently mean "never" while the master
+     switch still reads as on — two controls saying opposite things. The last
+     day stays on; the switch above is how you stop the mail. */
+  function toggleDay(day: number) {
+    setDays((d) => (d.includes(day) ? (d.length > 1 ? d.filter((x) => x !== day) : d) : [...d, day]));
+  }
+
   async function savePrefs() {
     setBusy(true);
     const { error } = await supabase.from('email_prefs').upsert({
@@ -90,6 +107,7 @@ export default function EmailReminders({
       subject: subject.trim() || null,
       horizon_days: Math.max(0, Math.min(30, Number(horizon) || 0)),
       sections,
+      days,
       updated_at: new Date().toISOString()
     });
     setBusy(false);
@@ -111,10 +129,20 @@ export default function EmailReminders({
   const preview = useMemo(() => {
     const prefs: EmailPrefs = {
       user_id: userId, enabled, subject: subject.trim() || null,
-      horizon_days: Math.max(0, Math.min(30, Number(horizon) || 0)), sections
+      horizon_days: Math.max(0, Math.min(30, Number(horizon) || 0)), sections, days
     };
-    return renderDigest({ projects: reminded as Project[], cards, prefs, today });
-  }, [userId, enabled, subject, horizon, sections, reminded, cards, today]);
+    const remindedIds = new Set(reminded.map((p) => p.id));
+    return renderDigest({
+      projects: reminded as Project[],
+      cards,
+      versions: versions.filter((z) => remindedIds.has(z.project_id)) as Version[],
+      prefs, today
+    });
+  }, [userId, enabled, subject, horizon, sections, days, reminded, cards, versions, today]);
+
+  // Would today's run actually send? The preview shows content either way, so
+  // say it plainly rather than letting a muted day look like a broken preview.
+  const sendsToday = days.includes(weekdayOf(today));
 
   if (loading) return <div className="set-card"><div className="set-row"><p className="set-desc">Loading…</p></div></div>;
 
@@ -191,6 +219,32 @@ export default function EmailReminders({
             </div>
 
             <div className="set-row">
+              <span className="set-label">Days to send on</span>
+              <div className="set-days" role="group" aria-label="Days to send on">
+                {WEEKDAYS.map((d) => {
+                  const on = days.includes(d.day);
+                  return (
+                    <button type="button" key={d.day} className={'set-day' + (on ? ' on' : '')}
+                      aria-pressed={on} title={d.label} aria-label={d.label}
+                      onClick={() => toggleDay(d.day)}>{d.short}</button>
+                  );
+                })}
+                <div className="set-day-presets">
+                  <button type="button" className={'set-preset' + (sameDays(days, EVERY_DAY) ? ' on' : '')}
+                    onClick={() => setDays(EVERY_DAY)}>Every day</button>
+                  <button type="button" className={'set-preset' + (sameDays(days, WEEKDAYS_ONLY) ? ' on' : '')}
+                    onClick={() => setDays(WEEKDAYS_ONLY)}>Weekdays</button>
+                </div>
+              </div>
+              <p className="set-hint">
+                {sameDays(days, EVERY_DAY)
+                  ? 'Sent every morning.'
+                  : `Sent on ${WEEKDAYS.filter((d) => days.includes(d.day)).map((d) => d.label).join(', ')}.`}
+                {' '}The day is counted in <b>Europe/Paris</b>, the same reference the send time uses.
+              </p>
+            </div>
+
+            <div className="set-row">
               <span className="set-label">Sections to show</span>
               <div className="set-chips" role="group" aria-label="Sections to show">
                 {EMAIL_SECTIONS.map((s) => {
@@ -233,7 +287,9 @@ export default function EmailReminders({
         <div className="set-preview-wrap">
           <div className="set-pv-top">
             <span className="set-label" style={{ margin: 0 }}>Live preview</span>
-            <span className="set-live"><i />Updating</span>
+            {sendsToday
+              ? <span className="set-live"><i />Updating</span>
+              : <span className="set-flag">not a send day</span>}
           </div>
           <div className="set-mail">
             <div className="set-mail-chrome"><i /><i /><i /></div>

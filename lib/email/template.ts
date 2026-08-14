@@ -1,10 +1,19 @@
-import type { Card, Project, EmailPrefs, EmailSection } from '@/lib/types';
+import type { Card, Project, EmailPrefs, EmailSection, Version } from '@/lib/types';
 
 export interface DigestInput {
   projects: Project[]; // only the user's reminder-enabled projects
   cards: Card[];       // cards belonging to those projects
+  versions?: Version[]; // versions of those projects — only ship dates are read
   prefs: EmailPrefs;
   today: string;       // YYYY-MM-DD in the user's reference timezone
+}
+
+/* The weekday the reminder would be sent on, 0 = Sunday, from the digest's own
+   reference date. The cron and the settings preview both read it, so "will this
+   send today?" has one answer, not two. */
+export function weekdayOf(today: string): number {
+  const [y, m, d] = today.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay();
 }
 
 const MONTHS = [
@@ -48,9 +57,13 @@ function addDays(iso: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/* The sections a *card* can land in. 'milestones' is the one section built from
+   versions instead, so it is deliberately not part of this union. */
+export type CardSection = Exclude<EmailSection, 'milestones'>;
+
 /* Put each open card into exactly one bucket relative to `today`. Undated cards
    have their own bucket, so they can be included without a date. */
-function bucketFor(card: Card, today: string, horizonEnd: string): EmailSection | null {
+function bucketFor(card: Card, today: string, horizonEnd: string): CardSection | null {
   if (card.done) return null;
   if (!card.target_date) return 'undated';
   if (card.target_date < today) return 'overdue';
@@ -68,10 +81,11 @@ const FONT = "'Helvetica Neue',Helvetica,Arial,sans-serif";
 const SECTION_THEME: Record<EmailSection, {
   label: string; accent: string; ink: string; tint: string;
 }> = {
-  overdue:  { label: 'Overdue',   accent: '#E5484D', ink: '#B4282C', tint: '#FBE7E7' },
-  today:    { label: 'Due today', accent: '#E6B400', ink: '#8A6300', tint: '#FDF3D4' },
-  upcoming: { label: 'Upcoming',  accent: '#4BAE6A', ink: '#356B2E', tint: '#EBF4E0' },
-  undated:  { label: 'No date',   accent: '#B3B0A6', ink: '#5E5C54', tint: '#F2F0E9' }
+  overdue:    { label: 'Overdue',    accent: '#E5484D', ink: '#B4282C', tint: '#FBE7E7' },
+  today:      { label: 'Due today',  accent: '#E6B400', ink: '#8A6300', tint: '#FDF3D4' },
+  upcoming:   { label: 'Upcoming',   accent: '#4BAE6A', ink: '#356B2E', tint: '#EBF4E0' },
+  undated:    { label: 'No date',    accent: '#B3B0A6', ink: '#5E5C54', tint: '#F2F0E9' },
+  milestones: { label: 'Milestones', accent: '#845EF7', ink: '#5B43B5', tint: '#EDE7FD' }
 };
 
 /* Whole days from `a` to `b` (both YYYY-MM-DD). Negative when b precedes a. */
@@ -186,6 +200,69 @@ function renderSection(bucket: EmailSection, cards: Card[], projName: Map<string
   </tr>`;
 }
 
+/* One milestone row: the version, the project it belongs to, and how the date
+   sits against today — the same "do the arithmetic for the reader" rule the
+   task rows follow. */
+function renderMilestoneRow(v: Version, projectName: string, today: string, first: boolean): string {
+  const t = SECTION_THEME.milestones;
+  const date = formatDigestDate(v.ship_date!);
+  const diff = daysBetween(today, v.ship_date!);
+  const timing = diff === 0 ? `Ships today · ${date}`
+    : diff < 0 ? `${date} · ${diff === -1 ? '1 day' : `${-diff} days`} late`
+      : diff === 1 ? `${date} · tomorrow`
+        : `${date} · in ${diff} days`;
+  return `<tr>
+    <td style="padding:${first ? '0' : '9px'} 0 0 0;font-family:${FONT};">
+      <div style="font-family:${FONT};font-size:14.5px;font-weight:400;line-height:1.4;color:#1B1A17;">${esc(v.name)}</div>
+      <div style="margin-top:3px;font-family:${FONT};font-size:11.5px;font-weight:400;line-height:1.5;color:${t.ink};">${esc(`${projectName} · ${timing}`)}</div>
+    </td>
+  </tr>`;
+}
+
+/* The milestones panel: same tinted block as a task section, one white card
+   holding every ship date in range. */
+function renderMilestones(versions: Version[], projName: Map<string, string>, today: string): string {
+  const t = SECTION_THEME.milestones;
+  const rows = versions
+    .map((v, i) => renderMilestoneRow(v, projName.get(v.project_id) || 'Untitled project', today, i === 0))
+    .join('');
+  return `<tr>
+    <td style="padding:0 0 12px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="background:${t.tint};border-radius:14px;">
+        <tr>
+          <td style="padding:15px 14px 9px 14px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:11px;">
+              <tr>
+                <td width="14" style="vertical-align:middle;padding-left:4px;">
+                  <div style="width:8px;height:8px;background:${t.accent};border-radius:9999px;font-size:0;line-height:0;">&nbsp;</div>
+                </td>
+                <td style="vertical-align:middle;font-family:${FONT};font-size:11.5px;font-weight:400;letter-spacing:0.08em;text-transform:uppercase;color:${t.ink};">
+                  ${t.label}
+                </td>
+                <td align="right" style="vertical-align:middle;padding-right:4px;font-family:${FONT};font-size:11.5px;font-weight:400;color:${t.ink};">
+                  ${versions.length}
+                </td>
+              </tr>
+            </table>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:0 0 6px 0;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;border-radius:10px;">
+                    <tr><td style="padding:12px 14px 13px 14px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table>
+                    </td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>`;
+}
+
 /* Build the reminder email for one user. Returns null when, after applying the
    user's section choices, there is nothing worth emailing about. */
 export function renderDigest(input: DigestInput): { subject: string; html: string } | null {
@@ -193,9 +270,18 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
   const horizonEnd = addDays(today, Math.max(0, prefs.horizon_days));
   const projName = new Map(projects.map((p) => [p.id, p.name]));
 
+  /* Milestones in range: still open, and either already past (those matter most)
+     or landing inside the horizon. */
+  const milestones = prefs.sections.includes('milestones')
+    ? (input.versions || [])
+      .filter((v) => v.ship_date && !v.completed && projName.has(v.project_id) && v.ship_date <= horizonEnd)
+      .sort((a, b) => (a.ship_date || '').localeCompare(b.ship_date || ''))
+    : [];
+
   // Only cards from reminder-enabled projects, bucketed and kept if the user
   // asked for that section.
-  const byBucket: Record<EmailSection, Card[]> = { overdue: [], today: [], upcoming: [], undated: [] };
+  // 'milestones' isn't a card bucket — it comes from versions, not cards.
+  const byBucket: Record<CardSection, Card[]> = { overdue: [], today: [], upcoming: [], undated: [] };
   for (const c of cards) {
     if (!projName.has(c.project_id)) continue;
     const b = bucketFor(c, today, horizonEnd);
@@ -203,13 +289,14 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
   }
 
   // Undated last: it's a backlog, not something due.
-  const order: EmailSection[] = ['overdue', 'today', 'upcoming', 'undated'];
+  const order: CardSection[] = ['overdue', 'today', 'upcoming', 'undated'];
   const total = order.reduce((n, b) => n + byBucket[b].length, 0);
-  if (total === 0) return null;
+  if (total === 0 && milestones.length === 0) return null;
 
   const active = order.filter((b) => byBucket[b].length > 0);
 
-  const blocks = active
+  // Milestones lead: a ship date is the frame the tasks underneath sit in.
+  const blocks = (milestones.length ? renderMilestones(milestones, projName, today) : '') + active
     .map((b) => {
       const items = byBucket[b]
         // Undated cards have no date to sort on — fall back to title.
@@ -224,13 +311,15 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
 
   /* A one-line summary, used both as the standfirst and as the inbox preview
      snippet — the reader should know the shape of the mail before opening it. */
-  const projectCount = new Set(
-    active.flatMap((b) => byBucket[b].map((c) => c.project_id))
-  ).size;
+  const projectCount = new Set([
+    ...active.flatMap((b) => byBucket[b].map((c) => c.project_id)),
+    ...milestones.map((v) => v.project_id)
+  ]).size;
   const summary =
     `${total} open ${total === 1 ? 'task' : 'tasks'} across ` +
     `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}` +
-    (byBucket.overdue.length ? ` · ${byBucket.overdue.length} overdue` : '');
+    (byBucket.overdue.length ? ` · ${byBucket.overdue.length} overdue` : '') +
+    (milestones.length ? ` · ${milestones.length} milestone${milestones.length === 1 ? '' : 's'}` : '');
 
   const html = `<!doctype html>
 <html lang="en">

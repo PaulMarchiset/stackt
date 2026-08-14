@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getEmailProvider } from '@/lib/email/sender';
-import { renderDigest } from '@/lib/email/template';
+import { renderDigest, weekdayOf } from '@/lib/email/template';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { DEFAULT_EMAIL_PREFS, type Card, type EmailPrefs, type Project } from '@/lib/types';
+import { DEFAULT_EMAIL_PREFS, type Card, type EmailPrefs, type Project, type Version } from '@/lib/types';
 
 // Cron target, invoked daily by Vercel (see vercel.json).
 // Runs on the Node.js runtime so provider SDKs / fetch behave predictably.
@@ -37,7 +37,8 @@ function prefsFor(userId: string, row: Partial<EmailPrefs> | undefined): EmailPr
     enabled: row?.enabled ?? DEFAULT_EMAIL_PREFS.enabled,
     subject: row?.subject ?? DEFAULT_EMAIL_PREFS.subject,
     horizon_days: row?.horizon_days ?? DEFAULT_EMAIL_PREFS.horizon_days,
-    sections: row?.sections ?? DEFAULT_EMAIL_PREFS.sections
+    sections: row?.sections ?? DEFAULT_EMAIL_PREFS.sections,
+    days: row?.days ?? DEFAULT_EMAIL_PREFS.days
   };
 }
 
@@ -49,6 +50,9 @@ export async function GET(request: Request) {
   const db = createAdminClient();
   const email = getEmailProvider();
   const today = parisToday();
+  // The weekday is resolved in the cron's reference timezone, so "weekdays only"
+  // means the same thing for everyone and never drifts by a day at the edges.
+  const weekday = weekdayOf(today);
 
   // 1. All reminder-enabled projects, grouped by owner.
   const { data: projects, error: pErr } = await db
@@ -71,11 +75,19 @@ export async function GET(request: Request) {
     .eq('done', false);
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
 
+  // 2b. Open versions carrying a ship date — the optional "Milestones" section.
+  const { data: versions } = await db
+    .from('versions')
+    .select('id, project_id, name, ship_date, completed')
+    .in('project_id', projectIds)
+    .eq('completed', false)
+    .not('ship_date', 'is', null);
+
   // 3. Per-user preferences (a missing row means defaults).
   const userIds = Array.from(new Set(projects.map((p) => p.user_id as string)));
   const { data: prefRows } = await db
     .from('email_prefs')
-    .select('user_id, enabled, subject, horizon_days, sections')
+    .select('user_id, enabled, subject, horizon_days, sections, days')
     .in('user_id', userIds);
   const prefsByUser = new Map((prefRows || []).map((r) => [r.user_id as string, r]));
 
@@ -95,17 +107,29 @@ export async function GET(request: Request) {
     arr.push(c as unknown as Card);
     cardsByUser.set(owner, arr);
   }
+  const versByUser = new Map<string, Version[]>();
+  for (const v of versions || []) {
+    const owner = projOwner.get(v.project_id as string);
+    if (!owner) continue;
+    const arr = versByUser.get(owner) || [];
+    arr.push(v as unknown as Version);
+    versByUser.set(owner, arr);
+  }
 
   // 4. Render + send one email per opted-in user.
   let sent = 0;
+  let skippedToday = 0;
   const errors: string[] = [];
   for (const userId of userIds) {
     const prefs = prefsFor(userId, prefsByUser.get(userId));
     if (!prefs.enabled) continue;
+    // Not one of this user's chosen weekdays — nothing to do for them today.
+    if (!prefs.days.includes(weekday)) { skippedToday++; continue; }
 
     const digest = renderDigest({
       projects: projByUser.get(userId) || [],
       cards: cardsByUser.get(userId) || [],
+      versions: versByUser.get(userId) || [],
       prefs,
       today
     });
@@ -127,6 +151,8 @@ export async function GET(request: Request) {
     ok: errors.length === 0,
     users: userIds.length,
     sent,
+    weekday,
+    skippedToday,   // opted in, but today isn't one of their days
     ...(errors.length ? { errors } : {}),
     ranAt: new Date().toISOString()
   });

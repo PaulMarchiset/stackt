@@ -1,11 +1,12 @@
 'use client';
 
-import type { Card, CardDraft, Project, Version } from '@/lib/types';
+import type { Card, TimelineViewProps, Version } from '@/lib/types';
 import { dateClass, formatDate, formatDateRange, todayISO, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
 import TypeTag from '@/app/components/TypeTag';
+import { IconCalendar, IconCheck, IconDots, IconFlag, IconPlus } from '@/app/components/icons';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 
@@ -18,7 +19,9 @@ function dayLabel(iso: string): string {
   return `${dow} · ${formatDate(iso)}`;
 }
 
-type Section = { key: string; label: string; cards: Card[] };
+/* A day's worth of the agenda. Milestones ride alongside the cards rather than
+   in a section of their own: what matters is "on this day, this also lands". */
+type Section = { key: string; label: string; cards: Card[]; milestones?: Version[] };
 
 /**
  * Mobile replacement for the horizontal Gantt: a vertical, top-to-bottom agenda
@@ -27,19 +30,9 @@ type Section = { key: string; label: string; cards: Card[] };
  * <Timeline> so BoardApp can swap the two behind useIsMobile().
  */
 export default function Agenda({
-  project, projCards, versions, cards, editing, newCardDate,
-  onAdd, onEdit, onToggle, onMenu, onSubmit, onCancel
-}: {
-  project: Project; projCards: Card[]; versions: Version[]; cards: Card[];
-  editing: string | null; newCardDate: string;
-  onAdd: (date: string) => void;
-  onEdit: (id: string) => void;
-  onToggle: (id: string) => void;
-  onMenu?: (id: string) => void;
-  onReschedule: (id: string, date: string) => void;
-  onSubmit: (v: CardDraft) => void;
-  onCancel: () => void;
-}) {
+  project, versions, cards, editing, newCardDate,
+  onAdd, onEdit, onToggle, onMenu, onCreateVersion, onSubmit, onCancel
+}: TimelineViewProps) {
   const devMode = useBoardDevMode();
   const v = vocab(devMode);
   const versionById = new Map(versions.map((z) => [z.id, z] as const));
@@ -68,6 +61,31 @@ export default function Agenda({
   if (earlier.length) sections.push({ key: 'earlier', label: 'Earlier', cards: earlier });
   if (undated.length) sections.push({ key: 'nodate', label: 'No date', cards: undated });
 
+  /* Drop each milestone into the day it belongs to, creating that day's section
+     if no card already made one — a ship date with nothing scheduled on it is
+     exactly the case worth seeing. Days already past keep theirs under "today"
+     so an overdue milestone can't scroll out of the way. */
+  const milestones = versions.filter((z) => !!z.ship_date);
+  milestones.forEach((z) => {
+    const iso = z.ship_date!;
+    const key = iso < today ? 'overdue' : iso === today ? 'today' : iso;
+    let at = sections.findIndex((s) => s.key === key);
+    if (at < 0) {
+      if (key === 'overdue') { sections.unshift({ key, label: 'Overdue', cards: [], milestones: [] }); at = 0; }
+      else if (key === 'today') {
+        at = sections.findIndex((s) => s.key === 'overdue') + 1;
+        sections.splice(at, 0, { key, label: `Today · ${formatDate(today)}`, cards: [], milestones: [] });
+      } else {
+        // Keep the day sections in date order.
+        at = sections.findIndex((s) => /^\d{4}-/.test(s.key) && s.key > key);
+        if (at < 0) at = sections.findIndex((s) => s.key === 'earlier' || s.key === 'nodate');
+        if (at < 0) at = sections.length;
+        sections.splice(at, 0, { key, label: dayLabel(iso), cards: [], milestones: [] });
+      }
+    }
+    (sections[at].milestones ??= []).push(z);
+  });
+
   const row = (c: Card) => {
     const cver = c.version_id ? versionById.get(c.version_id) : null;
     const ci = versionColor(cver);
@@ -78,7 +96,7 @@ export default function Agenda({
         className={'ag-card' + (c.done ? ' done' : '') + (c.type === 'bug' ? ' is-bug' : '')
           + (ci != null ? ' card-theme-' + ci : '')}>
         <button className={'checkbox' + (c.done ? ' checked' : '')} title="Mark done" onClick={() => onToggle(c.id)}>
-          <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+          <IconCheck />
         </button>
         <div className="ag-body">
           <button className="ag-title" onClick={() => onEdit(c.id)}>{c.title || 'Untitled'}</button>
@@ -88,7 +106,7 @@ export default function Agenda({
             {c.branch && <BranchChip repoUrl={project.repo_url} branch={c.branch} />}
             {(multi || dcls === 'overdue') && (
               <span className={'date ' + dcls}>
-                <svg viewBox="0 0 24 24"><path d="M21 10H3M16 2V6M8 2V6M7.8 22H16.2C17.8802 22 18.7202 22 19.362 21.673C19.9265 21.3854 20.3854 20.9265 20.673 20.362C21 19.7202 21 18.8802 21 17.2V8.8C21 7.11984 21 6.27976 20.673 5.63803C20.3854 5.07354 19.9265 4.6146 19.362 4.32698C18.7202 4 17.8802 4 16.2 4H7.8C6.11984 4 5.27976 4 4.63803 4.32698C4.07354 4.6146 3.6146 5.07354 3.32698 5.63803C3 6.27976 3 7.11984 3 8.8V17.2C3 18.8802 3 19.7202 3.32698 20.362C3.6146 20.9265 4.07354 21.3854 4.63803 21.673C5.27976 22 6.11984 22 7.8 22Z" /></svg>
+                <IconCalendar />
                 {formatDateRange(c.target_date, c.end_date)}
                 {dcls === 'overdue' && <span className="pill-overdue">overdue</span>}
               </span>
@@ -98,7 +116,7 @@ export default function Agenda({
         </div>
         {onMenu && (
           <button className="icon-btn ag-menu" title="Actions" onClick={() => onMenu(c.id)}>
-            <svg viewBox="0 0 24 24"><path d="M12 13C12.5523 13 13 12.5523 13 12C13 11.4477 12.5523 11 12 11C11.4477 11 11 11.4477 11 12C11 12.5523 11.4477 13 12 13Z" /><path d="M12 6C12.5523 6 13 5.55228 13 5C13 4.44772 12.5523 4 12 4C11.4477 4 11 4.44772 11 5C11 5.55228 11.4477 6 12 6Z" /><path d="M12 20C12.5523 20 13 19.5523 13 19C13 18.4477 12.5523 18 12 18C11.4477 18 11 18.4477 11 19C11 19.5523 11.4477 20 12 20Z" /></svg>
+            <IconDots />
           </button>
         )}
       </article>
@@ -111,7 +129,7 @@ export default function Agenda({
         <div className="cal-title">Timeline</div>
         <div className="meta-spacer" />
         <button className="btn solid" onClick={() => onAdd(today)}>
-          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> {`Add ${v.update.toLowerCase()}`}
+          <IconPlus className="ic" /> {`Add ${v.update.toLowerCase()}`}
         </button>
       </div>
 
@@ -121,7 +139,16 @@ export default function Agenda({
         sections.map((s) => (
           <section key={s.key} className={'ag-section' + (s.key === 'overdue' ? ' overdue' : '')}>
             <div className="ag-section-head">{s.label}<span className="ag-section-count">{s.cards.length}</span></div>
-            <div className="ag-list">{s.cards.map(row)}</div>
+            <div className="ag-list">
+              {s.milestones?.map((z) => (
+                <div key={z.id} className={'ag-ms card-theme-' + (versionColor(z) ?? 0) + (z.completed ? ' done' : '')}>
+                  <IconFlag />
+                  <span className="ag-ms-name">{z.name}</span>
+                  <span className="ag-ms-word">{v.version.toLowerCase()} ships</span>
+                </div>
+              ))}
+              {s.cards.map(row)}
+            </div>
           </section>
         ))
       )}
@@ -132,7 +159,7 @@ export default function Agenda({
             card={editCard} status={editCard ? editCard.status : 'todo'}
             defaultDate={isNew ? newCardDate : undefined}
             defaultVersion={project.active_version_id ? (versionById.get(project.active_version_id)?.name ?? '') : ''}
-            onSubmit={onSubmit} onCancel={onCancel} />
+            onCreateVersion={onCreateVersion} onSubmit={onSubmit} onCancel={onCancel} />
         </Modal>
       )}
     </div>

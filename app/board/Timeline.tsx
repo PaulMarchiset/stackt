@@ -1,16 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Card, CardDraft, Project, Version } from '@/lib/types';
+import type { Card, TimelineViewProps, Version } from '@/lib/types';
 import { todayISO, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
 import TypeTag from '@/app/components/TypeTag';
+import { IconCheck, IconFlag, IconPencil, IconPlus } from '@/app/components/icons';
 import CardEditor from './CardEditor';
 import Modal from './Modal';
 
 const STATUS_LABEL: Record<string, string> = { todo: 'To do', inprogress: 'In progress', done: 'Done' };
+
+/* Grid rows, named once so a change up top never means hunting for "+2".
+   1 day headers · 2+ card lanes · trailing filler. */
+const HEAD_ROW = 1;
+const LANE_ROW = 2;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -31,19 +37,9 @@ const mondayIso = (iso: string) => {
  * card is drawn once, not repeated per day.
  */
 export default function Timeline({
-  project, projCards, versions, cards, editing, newCardDate,
-  onAdd, onEdit, onToggle, onReschedule, onSubmit, onCancel
-}: {
-  project: Project; projCards: Card[]; versions: Version[]; cards: Card[];
-  editing: string | null; newCardDate: string;
-  onAdd: (date: string) => void;
-  onEdit: (id: string) => void;
-  onToggle: (id: string) => void;
-  onMenu?: (id: string) => void; // used only by the mobile Agenda; ignored here
-  onReschedule: (id: string, date: string) => void;
-  onSubmit: (v: CardDraft) => void;
-  onCancel: () => void;
-}) {
+  project, versions, cards, editing, newCardDate,
+  onAdd, onEdit, onToggle, onReschedule, onCreateVersion, onSubmit, onCancel
+}: TimelineViewProps) {
   const devMode = useBoardDevMode();
   const v = vocab(devMode);
   const versionById = new Map(versions.map((z) => [z.id, z] as const));
@@ -91,6 +87,9 @@ export default function Timeline({
   // each side — the leading days give some context just before today/the first card.
   const stamps: string[] = [];
   cards.forEach((c) => { if (c.target_date) stamps.push(c.target_date); if (c.end_date) stamps.push(c.end_date); });
+  // Ship dates widen the range too — a milestone with no card under it still has
+  // to have a column to stand on.
+  versions.forEach((z) => { if (z.ship_date) stamps.push(z.ship_date); });
   let minIso = today, maxIso = today;
   stamps.forEach((d) => { if (d < minIso) minIso = d; if (d > maxIso) maxIso = d; });
   const start = fromIso(minIso); start.setDate(start.getDate() - 7);
@@ -120,10 +119,33 @@ export default function Timeline({
   }
   const todayBucket = dayToBucket.get(today);
 
+  /* Which month a column belongs to. In Day view a screenful of "12 13 14 15"
+     says nothing about *when*, so the heading above the timeline names the month
+     you are actually looking at (see visMonth). Month view already names its
+     columns, so there the heading carries the year instead. */
+  const monthLabel = (b: Bucket) => {
+    const d = fromIso(b.dropIso);
+    return scale === 'month'
+      ? String(d.getFullYear())
+      : d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  };
+
   const undated = cards.filter((c) => !c.target_date);
   const hasNoDate = undated.length > 0;
   const colOffset = hasNoDate ? 1 : 0;          // grid column for buckets[0] = colOffset (0-based)
   const colCount = colOffset + buckets.length;
+
+  /* Milestones: the versions with a ship date, indexed by the column they land
+     in. They get their own grid row, which collapses to nothing when empty. */
+  const msByBucket = new Map<number, Version[]>();
+  versions.forEach((z) => {
+    if (!z.ship_date) return;
+    const i = dayToBucket.get(z.ship_date);
+    if (i == null) return;
+    const arr = msByBucket.get(i) ?? [];
+    arr.push(z);
+    msByBucket.set(i, arr);
+  });
 
   // Lane-pack every card into rows so overlapping spans never collide.
   type Placed = { card: Card; c0: number; c1: number; lane: number };
@@ -159,14 +181,25 @@ export default function Timeline({
     const delta = el.getBoundingClientRect().left - host.getBoundingClientRect().left;
     host.scrollTo({ left: Math.max(0, host.scrollLeft + delta - lead), behavior });
   };
-  useEffect(() => { scrollToToday(); }, [scale]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* The heading tracks the scroll: it names the month of the leftmost column you
+     can actually see, past the pinned "No date" panel. One place to look, and it
+     is right by construction — it reads the rendered header cells rather than
+     recomputing where the scroll "should" be. */
+  const [visMonth, setVisMonth] = useState('');
+  const readVisibleMonth = () => {
+    const host = scrollRef.current;
+    if (!host) return;
+    const hostR = host.getBoundingClientRect();
+    const pinned = host.querySelector<HTMLElement>('.cal-h-head.nodate');
+    const edge = hostR.left + (pinned ? pinned.getBoundingClientRect().width + 10 : 0) + 2;
+    const heads = host.querySelectorAll<HTMLElement>('.cal-h-head[data-month]');
+    for (let i = 0; i < heads.length; i++) {
+      if (heads[i].getBoundingClientRect().right > edge) { setVisMonth(heads[i].dataset.month || ''); return; }
+    }
+  };
+  useEffect(() => { scrollToToday(); readVisibleMonth(); }, [scale]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const title = (() => {
-    const f = fromIso(days[0]); const l = fromIso(days[days.length - 1]);
-    const opt: Intl.DateTimeFormatOptions = { month: 'short', year: 'numeric' };
-    const a = f.toLocaleDateString(undefined, opt), b = l.toLocaleDateString(undefined, opt);
-    return a === b ? a : `${f.toLocaleDateString(undefined, { month: 'short' })} – ${b}`;
-  })();
+  const title = visMonth || (buckets[0] ? monthLabel(buckets[0]) : '');
 
   const bar = ({ card: c, c0, c1, lane }: Placed) => {
     const cver = c.version_id ? versionById.get(c.version_id) : null;
@@ -174,7 +207,7 @@ export default function Timeline({
     const multi = c1 > c0;
     return (
       <div key={c.id} draggable
-        style={{ gridColumn: `${c0 + 1} / ${c1 + 2}`, gridRow: lane + 2 }}
+        style={{ gridColumn: `${c0 + 1} / ${c1 + 2}`, gridRow: lane + LANE_ROW }}
         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.id); const el = e.currentTarget; window.setTimeout(() => el.classList.add('dragging'), 0); }}
         onDragEnd={(e) => { e.currentTarget.classList.remove('dragging'); clearHighlight(); }}
         className={'cal-bar' + (c.done ? ' done' : '') + (c.type === 'bug' ? ' is-bug' : '')
@@ -183,7 +216,7 @@ export default function Timeline({
         <span className="cal-bar-accent" />
         <div className="cal-bar-main">
           <button className={'checkbox' + (c.done ? ' checked' : '')} title="Mark done" onClick={() => onToggle(c.id)}>
-            <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+            <IconCheck />
           </button>
           <div className="cal-bar-body">
             <button className="cal-bar-title" onClick={() => onEdit(c.id)}>{c.title || 'Untitled'}</button>
@@ -195,7 +228,7 @@ export default function Timeline({
             </div>
           </div>
           <button className="cal-bar-edit" title="Edit" onClick={() => onEdit(c.id)}>
-            <svg viewBox="0 0 24 24"><path d="M12 20H21M3.00003 20H4.67457C5.16376 20 5.40835 20 5.63852 19.9447C5.84259 19.8957 6.03768 19.8149 6.21663 19.7053C6.41846 19.5816 6.59141 19.4086 6.93732 19.0627L19.5001 6.49998C20.3285 5.67156 20.3285 4.32841 19.5001 3.49998C18.6716 2.67156 17.3285 2.67156 16.5001 3.49998L3.93729 16.0627C3.59139 16.4086 3.41843 16.5816 3.29475 16.7834C3.18509 16.9624 3.10428 17.1574 3.05529 17.3615C3.00003 17.5917 3.00003 17.8363 3.00003 18.3255V20Z" /></svg>
+            <IconPencil />
           </button>
         </div>
       </div>
@@ -221,21 +254,39 @@ export default function Timeline({
       dnum = String(d.getDate());
       if (d.getDate() === 1 || bucket.dropIso === days[0]) mon = d.toLocaleDateString(undefined, { month: 'short' });
     }
+    /* The milestone rides in the header, immediately right of the day number:
+       a ship date is a property of that day, so it belongs where the day is
+       named rather than in a band of its own below. */
+    const ms = msByBucket.get(i);
     return (
-      <div key={'h' + bucket.key} className={'cal-h-head ' + whenOf(i)} style={{ gridColumn: i + colOffset + 1, gridRow: 1 }}
+      <div key={'h' + bucket.key} className={'cal-h-head ' + whenOf(i)} data-month={monthLabel(bucket)}
+        style={{ gridColumn: i + colOffset + 1, gridRow: HEAD_ROW }}
         ref={i === todayBucket ? todayRef : undefined}>
         <span className="cal-dow2">{dow2}</span>
         <span className="cal-dnum">{dnum}</span>
-        {mon && <span className="cal-mon">{mon}</span>}
+        {ms?.map((z) => (
+          <span key={z.id} className={'cal-ms card-theme-' + (versionColor(z) ?? 0) + (z.completed ? ' done' : '')}
+            title={`${z.name} · ships ${z.ship_date}`}>
+            <IconFlag />
+            <span className="cal-ms-name">{z.name}</span>
+          </span>
+        ))}
+        {mon && !ms && <span className="cal-mon">{mon}</span>}
       </div>
     );
   };
 
   // A column background carries its representative date in data-iso; the drop handler reads it.
-  const bgCell = (bucket: Bucket, i: number) => (
-    <div key={'b' + bucket.key} className={'cal-h-bg ' + whenOf(i)} data-iso={bucket.dropIso}
-      style={{ gridColumn: i + colOffset + 1, gridRow: '2 / -1' }} onDoubleClick={() => onAdd(bucket.dropIso)} />
-  );
+  const bgCell = (bucket: Bucket, i: number) => {
+    const ms = msByBucket.get(i);
+    const ci = ms ? versionColor(ms[0]) : null;
+    return (
+      <div key={'b' + bucket.key} data-iso={bucket.dropIso}
+        className={'cal-h-bg ' + whenOf(i) + (ms ? ' has-ms card-theme-' + (ci ?? 0) : '')}
+        style={{ gridColumn: i + colOffset + 1, gridRow: `${LANE_ROW} / -1` }}
+        onDoubleClick={() => onAdd(bucket.dropIso)} />
+    );
+  };
 
   return (
     <div className="calendar-h">
@@ -250,17 +301,18 @@ export default function Timeline({
           ))}
         </div>
         <button className="btn solid" onClick={() => onAdd(today)}>
-          <svg viewBox="0 0 16 16" className="ic"><path d="M8 3.5v9M3.5 8h9" /></svg> {`Add ${v.update.toLowerCase()}`}
+          <IconPlus className="ic" /> {`Add ${v.update.toLowerCase()}`}
         </button>
         <button className="btn" onClick={() => scrollToToday('smooth')}>Today</button>
       </div>
 
-      <div className="cal-h" ref={scrollRef}
+      <div className="cal-h" ref={scrollRef} onScroll={readVisibleMonth}
         onDragOver={onTimelineDragOver} onDrop={onTimelineDrop} onDragLeave={onTimelineDragLeave}>
         <div className="cal-grid"
           style={{
             gridTemplateColumns: `repeat(${colCount}, var(--day-w))`,
-            // trailing 1fr row lets the day columns (and drop highlight) fill the full height
+            // headers · lanes · trailing 1fr so the day columns (and the drop
+            // highlight) fill the full height
             gridTemplateRows: `auto repeat(${laneCount}, minmax(var(--lane-h), max-content)) 1fr`,
             // Where a spanning bar's content re-pins so it clears the sticky "No date" column.
             ['--stick-left' as string]: hasNoDate ? 'calc(var(--day-w) + var(--cal-gap))' : '0px'
@@ -268,10 +320,10 @@ export default function Timeline({
           {/* No-date column (kept inside the grid so its header lines up with the days) */}
           {hasNoDate && (
             <>
-              <div className="cal-h-head nodate" style={{ gridColumn: 1, gridRow: 1 }}>
+              <div className="cal-h-head nodate" style={{ gridColumn: 1, gridRow: HEAD_ROW }}>
                 <span className="cal-dow2">No date</span>
               </div>
-              <div className="cal-h-bg nodate" data-iso="" style={{ gridColumn: 1, gridRow: '1 / -1' }} />
+              <div className="cal-h-bg nodate" data-iso="" style={{ gridColumn: 1, gridRow: `${HEAD_ROW} / -1` }} />
             </>
           )}
           {buckets.map(headCell)}
@@ -286,7 +338,7 @@ export default function Timeline({
             card={editCard} status={editCard ? editCard.status : 'todo'}
             defaultDate={isNew ? newCardDate : undefined}
             defaultVersion={project.active_version_id ? (versionById.get(project.active_version_id)?.name ?? '') : ''}
-            onSubmit={onSubmit} onCancel={onCancel} />
+            onCreateVersion={onCreateVersion} onSubmit={onSubmit} onCancel={onCancel} />
         </Modal>
       )}
     </div>

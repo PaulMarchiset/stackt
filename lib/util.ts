@@ -9,8 +9,12 @@ export function versionTheme(v: string): number {
   return h % PALETTE.length;
 }
 
-/* Palette index for a version row: its chosen color, else the stable hash. */
-export function versionColor(ver?: Version | null): number | null {
+/* Palette index for anything that carries a name and an optional chosen colour —
+   a version or a project group. Structural on purpose: both follow the same rule
+   (an explicit choice, else the stable hash), and one rule deserves one function. */
+export type Tinted = { name: string; color_index: number | null };
+
+export function versionColor(ver?: Tinted | null): number | null {
   if (!ver) return null;
   return ver.color_index ?? versionTheme(ver.name);
 }
@@ -20,6 +24,16 @@ export function sortVersions(list: Version[]): Version[] {
   return list.slice().sort((a, b) =>
     a.position - b.position ||
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+/* Completed versions, most recently completed FIRST — so the one you just closed
+   sits leftmost in the version bar and the oldest trails off to the right.
+   Versions completed before completed_at existed (or by an older client) carry no
+   stamp; they fall back to newest-created first and sit after the stamped ones. */
+export function sortCompletedVersions(list: Version[]): Version[] {
+  return list.slice().sort((a, b) =>
+    (b.completed_at || '').localeCompare(a.completed_at || '') ||
+    b.position - a.position);
 }
 
 /* The reminder cron is scheduled at 08:00 **UTC** (see vercel.json), and Vercel
@@ -67,6 +81,23 @@ export function formatDateRange(start: string | null, end: string | null): strin
   const left = sd.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
   const right = ed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return `${left} → ${right}`;
+}
+
+/* "15 Sep" — the compact form used on a version chip, where a full date would
+   double the pill's width. */
+export function formatDateShort(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/* A version's ship date, classified for display: 'late' once the day has passed
+   with the version still open, 'soon' inside three days, '' otherwise. A
+   completed version's date is history, so it never reads as late. */
+export function shipClass(ver: Version, today = todayISO()): string {
+  if (!ver.ship_date || ver.completed) return '';
+  if (ver.ship_date < today) return 'late';
+  const days = Math.round((Date.parse(ver.ship_date) - Date.parse(today)) / 86400000);
+  return days <= 3 ? 'soon' : '';
 }
 
 /* '', 'overdue', 'soon', or 'none' for date pill styling. */

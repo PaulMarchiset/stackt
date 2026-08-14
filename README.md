@@ -42,16 +42,19 @@ says *Phase* and *Urgent*. Same app underneath, different words on top.
 - **A board that gets out of the way.** To do · In progress · Done. Drag a card,
   it moves. No setup, no ceremony.
 - **Versioned by design.** Group cards by version, give each release its own
-  colour, archive it in one click when it ships.
+  colour, set the ship date it's aiming at, archive it in one click.
+- **Import a list.** Paste `[v1.2.0]` and a few `- task` bullets and get cards —
+  with a preview of exactly what will be created before anything is written.
 - **Bugs, not buried.** Log one the second you find it, then filter the board
   down to just bugs when it's time to squash them.
 - **Timeline view.** A horizontal calendar of what's due, day by day — with a
   vertical agenda on mobile.
 - **Daily reminder email.** One mail a morning with what's overdue, due today,
-  coming up, or sitting undated. You pick the projects, the sections and the
-  horizon; a live preview shows exactly what will land.
+  coming up, sitting undated, or shipping soon. You pick the projects, the
+  sections, the horizon and the weekdays; a live preview shows what will land.
 - **Many projects, one home.** Side projects, client work, that thing you'll
-  definitely finish — switch between them instantly.
+  definitely finish — switch between them instantly. Head the board with your
+  favorites, a hand-picked set, or your own groups as side-by-side islands.
 - **Private by default.** Every row is owned by a user and guarded by row-level
   security in Postgres.
 
@@ -150,13 +153,28 @@ else can trigger it.
 ```
 app/
   page.tsx              landing page
-  board/                the board: kanban, timeline, mobile agenda, card editor
+  board/
+    BoardApp.tsx        view state + composition (no data access, no markup of its own)
+    BoardHeader.tsx     desktop topbar · one-row mobile topbar
+    VersionBar.tsx      the version/phase chips + the update/bug filter
+    VersionMenu.tsx     version options, as a popover (desktop) and a sheet (touch)
+    BoardCard.tsx       a card in a column
+    CardEditor.tsx      create/edit a card, incl. creating a version inline
+    ImportDialog.tsx    paste a bullet list → cards, with a live preview
+    Calendar.tsx        the month grid (single day or range)
+    DateField.tsx       editor date input · DatePill.tsx  reschedule from a card
+    Timeline.tsx        horizontal gantt · Agenda.tsx  its mobile counterpart
+    Modal.tsx           dialog on desktop, bottom sheet on touch
   projects/             all-projects home
-  settings/             profile, preferences, email reminder builder
+  settings/             profile · board header + groups · email reminder builder
+  components/           cross-page pieces — icons.tsx holds every SVG
   api/cron/daily/       the reminder cron target
   auth/                 callback · signout · account deletion
   globals.css           the whole design system
 lib/
+  useBoardStore.ts      the board's data layer: state + every Supabase write
+  headerProjects.ts     header mode + groups → the islands the header draws
+  importText.ts         the bullet-list grammar, as a pure parser
   email/                digest template + swappable providers (console · brevo)
   supabase/             browser · server · middleware clients
   labels.ts             the two vocabularies (developer / plain)
@@ -166,6 +184,17 @@ supabase/
   migrations/           ordered changes to an existing database
 middleware.ts           refreshes sessions, guards routes
 ```
+
+The split is deliberate: **`lib/`** is pure or data-only and knows nothing about
+the screen; **`app/board/BoardApp.tsx`** decides what is open, filtered or being
+edited and owns no markup beyond layout; everything else is a component that
+renders one thing. Adding a field means touching `types.ts`, a migration, and
+the one component that shows it — not a 900-line file.
+
+Two rules keep the pure layer honest. `headerIslands()` is what the board header
+renders **and** what the settings preview renders, so the sample can't lie about
+what you'll get. `parseImport()` is what the import preview shows **and** what
+the writer consumes, so nothing is created that the preview didn't show.
 
 ## Notes
 

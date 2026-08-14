@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Logo from '@/app/Logo';
 import AccountMenu from '@/app/components/AccountMenu';
 import EmailReminders from './EmailReminders';
+import HeaderProjects from './HeaderProjects';
 import { createClient } from '@/lib/supabase/client';
 import { useDevMode } from '@/lib/useDevMode';
 import { CHANGELOG_VERSION } from '@/lib/changelog';
@@ -24,6 +25,7 @@ import { BUG_ICON_PATH } from '@/app/components/TypeTag';
 const SECTIONS = [
   { id: 'profile', label: 'Profile' },
   { id: 'prefs', label: 'Preferences' },
+  { id: 'header', label: 'Board header' },
   { id: 'email', label: 'Email reminders' },
   { id: 'help', label: 'Help & legal' },
   { id: 'account', label: 'Account' }
@@ -187,6 +189,12 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
                   </div>
                 </div>
               </div>
+            </section>
+
+            {/* ---------- Board header ---------- */}
+            <section className="set-section" id="header">
+              <div className="set-eyebrow">Board header</div>
+              <HeaderProjects userId={userId} onToast={say} />
             </section>
 
             {/* ---------- Email reminders ---------- */}

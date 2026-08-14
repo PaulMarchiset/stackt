@@ -118,6 +118,18 @@ button { font-family: inherit; }
 .projects { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .projects::-webkit-scrollbar { display: none; }
 
+/* Project islands: each run of tabs is one place. The divider is what separates
+   them — a labelled island also wears its group name, tinted with the group's
+   colour, so two runs never read as one long list. */
+.proj-isle { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.isle-sep { width: 1px; height: 20px; margin: 0 6px; background: rgba(26,26,24,0.14); flex-shrink: 0; }
+.isle-label {
+  flex-shrink: 0; font-family: var(--display); font-size: 9.5px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
+  background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
+  padding: 4px 9px; border-radius: 7px;
+}
+
 .tab {
   flex-shrink: 0; border: none; background: transparent; color: var(--ink-soft);
   padding: 8px 15px; border-radius: 9999px; font-size: 13px; font-weight: 700;
@@ -179,6 +191,16 @@ button { font-family: inherit; }
 
 /* ---------- Project meta row ---------- */
 .project-meta { display: flex; align-items: center; gap: 12px; padding: 26px 28px 10px; }
+/* The board's own controls stack on the right: the save state states a fact, so
+   it sits above; Import and the reminder bell are actions and share the row
+   below, matched on height so their edges line up. */
+.meta-side { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; flex-shrink: 0; }
+.meta-side .save-state { min-width: 0; }
+.meta-actions { display: flex; align-items: stretch; gap: 6px; }
+.meta-import { flex-shrink: 0; }
+.meta-actions .btn { height: 34px; padding-top: 0; padding-bottom: 0; }
+.meta-bell { width: 34px; justify-content: center; }
+.meta-actions .notif { display: flex; }
 .project-name {
   font-family: var(--display); font-size: 42px; font-weight: 800;
   letter-spacing: -0.035em; line-height: 1.0; color: var(--ink);
@@ -215,10 +237,10 @@ button { font-family: inherit; }
 /* ---------- Version bar ---------- */
 .version-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 28px 2px; }
 .vchip {
-  display: inline-flex; align-items: center; gap: 6px; border: none;
+  display: inline-flex; align-items: center; gap: 9px; border: none;
   background: var(--surface); color: var(--ink-soft);
   font-family: var(--mono); font-size: 11.5px; font-weight: 500;
-  padding: 7px 13px; border-radius: 9999px; cursor: pointer; box-shadow: var(--shadow-sm);
+  padding: 8px 16px; border-radius: 9999px; cursor: pointer; box-shadow: var(--shadow-sm);
   transition: background 140ms var(--ease), color 140ms var(--ease), box-shadow 140ms var(--ease);
 }
 .vchip:hover { box-shadow: var(--shadow); color: var(--ink); }
@@ -232,14 +254,17 @@ button { font-family: inherit; }
 .vchip.completed .vlabel { text-decoration: line-through; text-decoration-color: rgba(26,26,24,0.4); }
 .vcheck { display: inline-flex; color: var(--green-ink); }
 .vcheck svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+/* A version's ship date, on its own chip: the milestone it's aiming at. Reads
+   quietly until the day is close, then loud once it has passed. */
+.vship { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,0.6); opacity: 0.9; }
+.vship.soon { background: var(--accent); color: var(--on-accent); opacity: 1; font-weight: 600; }
+.vship.late { background: var(--danger); color: #fff; opacity: 1; font-weight: 600; }
 .vchip.reveal { background: transparent; box-shadow: none; color: var(--green-ink); font-weight: 700; border: 1.5px solid rgba(31, 174, 121, 0.4); }
 .vchip.reveal:hover { background: rgba(31, 174, 121, 0.1); }
 .vchip.reveal .ic { width: 12px; height: 12px; }
-.vremove { margin-left: 1px; font-size: 14px; line-height: 1; opacity: 0.5; transition: opacity 140ms var(--ease); }
-.vremove:hover { opacity: 1; }
 
 /* Colored version pills: the whole pill takes the version's theme; a chevron opens options */
-.vchip-ver { background: var(--p-bg); color: var(--p-ink); padding-right: 8px; }
+.vchip-ver { background: var(--p-bg); color: var(--p-ink); padding-right: 10px; }
 .vchip-ver:hover { color: var(--p-ink); box-shadow: var(--shadow); }
 .vchip-ver.active { box-shadow: inset 0 0 0 2px var(--p-ink); }
 .vchip-ver.active:hover { box-shadow: inset 0 0 0 2px var(--p-ink), var(--shadow); }
@@ -247,7 +272,7 @@ button { font-family: inherit; }
 .vchip-ver .vcheck { color: var(--p-ink); }
 .vopts {
   display: inline-grid; place-items: center; width: 20px; height: 20px;
-  margin: -3px -5px -3px 1px; border-radius: 7px; cursor: pointer;
+  margin: -3px -4px -3px -2px; border-radius: 7px; cursor: pointer;
   opacity: 0.7; transition: opacity 130ms var(--ease), background 130ms var(--ease);
 }
 .vopts:hover { opacity: 1; background: rgba(0, 0, 0, 0.09); }
@@ -263,12 +288,6 @@ button { font-family: inherit; }
 .tf-opt:hover { color: var(--ink); }
 .tf-opt.active { background: var(--ink); color: #fff; }
 .tf-opt.bug.active { background: #E5484D; color: #fff; }
-
-.vswatch {
-  width: 12px; height: 12px; border-radius: 9999px; flex-shrink: 0; display: inline-block;
-  box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.14); cursor: pointer; transition: transform 120ms var(--ease);
-}
-.vswatch:hover { transform: scale(1.2); }
 
 .color-pop {
   position: absolute; z-index: 60; display: flex; flex-direction: column; gap: 8px;
@@ -297,6 +316,10 @@ button { font-family: inherit; }
   width: 100%; font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink);
   border: 1.5px solid var(--border); background: #FBFAF6; border-radius: 9px; padding: 8px 10px; outline: none;
 }
+/* Ship date row inside the version menu */
+.pop-ship { display: flex; flex-direction: column; gap: 5px; }
+.pop-ship-label { font-family: var(--display); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); }
+.pop-ship .date-btn { padding: 8px 10px; font-size: 11.5px; }
 .pop-rename:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
 /* Custom merge dropdown (styled options work on every OS, unlike native <option>) */
 .merge-select { display: flex; flex-direction: column; }
@@ -430,6 +453,11 @@ button { font-family: inherit; }
 .date.overdue .pill-overdue { margin-left: 2px; text-transform: uppercase; letter-spacing: 0.05em; font-size: 8px; background: var(--danger); color: #fff; padding: 2px 6px; border-radius: 9999px; }
 .date.soon { background: var(--accent-soft); color: #8A6300; font-weight: 600; }
 .date.none { color: var(--ink-mute); }
+/* Desktop: the pill is the reschedule control (see DatePill.tsx). The dotted
+   underline is the only hint it needs — it stays a pill, not a button. */
+.date.editable { cursor: pointer; box-shadow: inset 0 0 0 1px transparent; transition: box-shadow 130ms var(--ease), background 130ms var(--ease); }
+.date.editable:hover { box-shadow: inset 0 0 0 1px rgba(26,26,24,0.16); }
+.date.editable:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ---------- Inline editor ---------- */
 .card-edit-wrap { cursor: default; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); }
@@ -501,6 +529,35 @@ button { font-family: inherit; }
 .cal-pop-day.today { color: #C25A12; font-weight: 800; }
 .cal-pop-day.sel { background: var(--accent); color: var(--on-accent); }
 .cal-pop-day:disabled { color: var(--ink-mute); opacity: 0.35; cursor: not-allowed; background: transparent; }
+/* Range mode: the days between the two ends are washed in, and the ends square
+   off on the inner side so the span reads as one continuous bar. */
+.cal-pop-day.in-range { background: var(--accent-soft); color: #8A6300; border-radius: 0; }
+.cal-pop-day.r-start { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cal-pop-day.r-end { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* ---- Date pill popover (reschedule from the card) ---- */
+.date-pop { width: 272px; }
+.date-pop-tabs { display: flex; align-items: stretch; gap: 4px; margin-bottom: 10px; }
+.date-pop-tab {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: 10px; padding: 6px 9px;
+  transition: border-color 130ms var(--ease), background 130ms var(--ease);
+}
+.date-pop-tab .k { font-family: var(--display); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); }
+.date-pop-tab .v { font-family: var(--mono); font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-pop-tab.on { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.date-pop-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+.date-pop-tab:disabled .v { color: var(--ink-mute); }
+.date-pop-arrow { align-self: center; color: var(--ink-mute); font-size: 12px; }
+.date-pop-foot { display: flex; align-items: center; gap: 4px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); }
+.date-pop-act {
+  border: none; background: transparent; cursor: pointer; color: var(--ink-soft);
+  font-family: var(--sans); font-size: 12px; font-weight: 700; padding: 7px 11px; border-radius: 9px;
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.date-pop-act:hover { background: var(--canvas); color: var(--ink); }
+.date-pop-act.primary { background: var(--accent); color: var(--on-accent); }
+.date-pop-act.primary:hover { background: var(--accent-hover); }
 .ver-label { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); margin: 2px 0 -2px; }
 .ver-quick { display: flex; flex-wrap: wrap; gap: 6px; }
 .ver-pick {
@@ -510,6 +567,24 @@ button { font-family: inherit; }
 }
 .ver-pick:hover { transform: translateY(-1px); }
 .ver-pick.active { border-color: var(--ink); }
+.ver-pick.ver-none { background: transparent; color: var(--ink-mute); box-shadow: inset 0 0 0 1.5px var(--border); }
+.ver-pick.ver-none.active { color: var(--ink); }
+/* "New" is an action, not a value — dashed, like every other add affordance. */
+.ver-pick.ver-new { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: var(--ink-soft); border: 1.5px dashed rgba(26,26,24,0.24); }
+.ver-pick.ver-new:hover { background: var(--surface); color: var(--ink); }
+.ver-pick.ver-new svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+
+/* The create-a-version sub-form. Boxed and set apart so it reads as "you are
+   making a new thing", and it ends in an explicit button — creating is an act,
+   not a side effect of saving the card. */
+.ver-create { display: flex; flex-direction: column; gap: 8px; padding: 11px; border-radius: var(--radius-xs); background: #FBFAF6; box-shadow: inset 0 0 0 1.5px var(--border); }
+.card-edit .ver-create-input { font-family: var(--mono); font-size: 12px; background: var(--surface); }
+.ver-create-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ver-create-actions .btn { padding: 7px 14px; font-size: 12px; }
+/* The receipt: the version now exists, and it's the one on this card. */
+.ver-created { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--green-ink); background: var(--green-soft); padding: 8px 11px; border-radius: var(--radius-xs); }
+.ver-created strong { font-family: var(--mono); font-weight: 700; }
+.ver-created svg { flex-shrink: 0; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .edit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
 .edit-actions .btn { padding: 8px 16px; font-size: 12px; }
 
@@ -546,7 +621,7 @@ button { font-family: inherit; }
 .cal-grid { display: grid; width: max-content; flex: 0 0 auto; column-gap: var(--cal-gap); row-gap: 10px; align-items: stretch; }
 
 /* Column headers (grid row 1) */
-.cal-h-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; border-bottom: 2px solid var(--border); }
+.cal-h-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; border-bottom: 2px solid var(--border); min-width: 0; }
 .cal-dow2 { font-family: var(--display); font-weight: 800; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
 .cal-dnum { font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--ink); }
 .cal-mon { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-mute); margin-left: auto; }
@@ -576,6 +651,22 @@ button { font-family: inherit; }
 /* Drop handling is coordinate-based (see Timeline.tsx): the scroll container computes the
    hovered day from the pointer X, so it never depends on which element the drag hit. */
 .cal-h-bg.drop-target { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+
+/* A day carrying a milestone is marked down its whole height — that vertical
+   line is what makes a ship date read as a jalon rather than another card. */
+.cal-h-bg.has-ms { box-shadow: inset 3px 0 0 var(--p-ink); background: rgba(26, 26, 24, 0.028); }
+/* The flag sits in the header, right of the day number: it belongs to that day,
+   so it is named where the day is named. */
+.cal-ms {
+  align-self: center; margin-left: 2px; min-width: 0;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--p-bg); color: var(--p-ink);
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  padding: 3px 9px 3px 7px; border-radius: 9999px;
+}
+.cal-ms.done { opacity: 0.55; }
+.cal-ms svg { flex-shrink: 0; width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cal-ms-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Event bars — single-day fills its column; multi-day spans several */
 .cal-bar {
@@ -607,7 +698,7 @@ button { font-family: inherit; }
   font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.35; padding: 1px 0 0;
   overflow-wrap: anywhere; word-break: break-word;
   /* keep cards a similar height: at most two lines, ellipsis beyond */
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .cal-bar.done .cal-bar-title { color: var(--ink-mute); text-decoration: line-through; text-decoration-color: rgba(26,26,24,0.35); }
 .cal-bar-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -660,15 +751,65 @@ button { font-family: inherit; }
 .modal-close svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .modal-body { padding: 14px 16px 16px; }
 
-/* ---------- What's new popup ---------- */
-.whatsnew-modal { width: 600px; max-width: calc(100vw - 32px); }
-.whatsnew-intro { font-size: 13px; color: var(--ink-soft); margin: 0 0 14px; }
-.whatsnew-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.whatsnew-list li { position: relative; padding-left: 18px; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
-.whatsnew-list li::before { content: ''; position: absolute; left: 3px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* ---------- Import a bullet list ----------
+   Paste on the left, see exactly what will be created on the right. The two
+   columns are the whole idea: nothing is written until the preview agrees. */
+.modal.import-modal { width: 880px; }
+.imp { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.imp-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.imp-text {
+  width: 100%; height: 300px; resize: vertical; outline: none;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.65; color: var(--ink);
+  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: var(--radius-xs); padding: 12px;
+  transition: border-color 130ms var(--ease), background 130ms var(--ease);
+}
+.imp-text:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.imp-help { display: flex; flex-direction: column; gap: 5px; }
+.imp-help p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
+.imp-help code { font-family: var(--mono); font-size: 11px; color: var(--ink); background: #F1F0EA; padding: 1px 5px; border-radius: 4px; }
+.imp-help-note { color: var(--ink-mute) !important; }
+
+.imp-preview-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.imp-summary { font-family: var(--mono); font-size: 11px; color: var(--green-ink); background: var(--green-soft); padding: 3px 9px; border-radius: 9999px; }
+.imp-preview {
+  height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  background: var(--canvas); border-radius: var(--radius-xs); padding: 12px;
+}
+.imp-empty { margin: auto; text-align: center; font-size: 12.5px; color: var(--ink-mute); }
+.imp-block { background: var(--surface); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow-sm); }
+.imp-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.imp-ver { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); }
+.imp-ver.none { color: var(--ink-mute); font-weight: 500; }
+.imp-badge {
+  display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); background: #F1F0EA;
+  padding: 2px 7px; border-radius: 6px;
+}
+.imp-badge.new { color: var(--green-ink); background: var(--green-soft); }
+.imp-badge svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.imp-task { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; font-size: 12.5px; color: var(--ink); }
+.imp-task + .imp-task { border-top: 1px solid rgba(26,26,24,0.05); }
+.imp-task-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.imp-tag { flex-shrink: 0; font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 9999px; }
+.imp-tag.date { background: #F1F0EA; color: var(--ink-soft); }
+.imp-tag.bug { background: var(--danger); color: #fff; text-transform: uppercase; letter-spacing: 0.04em; font-size: 9px; }
+.imp-skipped { background: var(--danger-soft); border-radius: 10px; padding: 10px 12px; }
+.imp-skipped-head { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #B4282C; margin-bottom: 6px; }
+.imp-skip { display: flex; gap: 8px; font-family: var(--mono); font-size: 11px; color: #8A2E30; padding: 2px 0; }
+.imp-skip-n { flex-shrink: 0; opacity: 0.6; min-width: 18px; text-align: right; }
+.imp-skip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-actions { margin-top: 16px; }
+
+/* ---------- What's new popup ----------
+   A list you can read at a glance on the way past, not a release note. */
+.whatsnew-modal { width: 440px; max-width: calc(100vw - 32px); }
+.whatsnew-intro { font-size: 13px; color: var(--ink-soft); margin: 0 0 12px; }
+.whatsnew-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.whatsnew-list li { position: relative; padding-left: 17px; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.whatsnew-list li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .whatsnew-list strong { font-weight: 700; }
 .whatsnew-body { color: var(--ink-soft); }
-.whatsnew .edit-actions { margin-top: 16px; }
+.whatsnew .edit-actions { margin-top: 18px; }
 
 /* ---------- Legal pages ---------- */
 .legal { min-height: 100%; display: flex; flex-direction: column; background: var(--canvas); }
@@ -839,6 +980,88 @@ button { font-family: inherit; }
 .set-chip[data-key="today"][aria-pressed="true"] .dot { background: #E6B400; }
 .set-chip[data-key="upcoming"][aria-pressed="true"] { background: var(--green-soft); border-color: #C6E0AE; color: var(--green-ink); }
 .set-chip[data-key="upcoming"][aria-pressed="true"] .dot { background: var(--green); }
+
+/* ---- Reminder weekdays ---- */
+.set-days { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.set-day {
+  width: 38px; height: 38px; flex-shrink: 0; border-radius: 9999px; cursor: pointer;
+  border: 1.5px solid var(--border); background: #FBFAF6;
+  font-family: var(--display); font-size: 13px; font-weight: 800; color: var(--ink-mute);
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.set-day:hover { border-color: var(--ink-mute); color: var(--ink); }
+.set-day.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.set-day:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.set-day-presets { display: flex; gap: 6px; margin-left: 6px; }
+.set-preset {
+  border: none; cursor: pointer; background: #F1F0EA; color: var(--ink-soft);
+  font-family: var(--sans); font-size: 12px; font-weight: 700; padding: 8px 13px; border-radius: 9999px;
+  transition: background 130ms var(--ease), color 130ms var(--ease);
+}
+.set-preset:hover { background: #E9E7DE; color: var(--ink); }
+.set-preset.on { background: var(--ink); color: #fff; }
+
+/* ---- Board header: mode picker, live sample, groups ---- */
+.set-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 9px; }
+.set-mode {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: var(--radius-xs); padding: 12px 14px;
+  transition: border-color 140ms var(--ease), background 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.set-mode:hover { border-color: var(--ink-mute); }
+.set-mode.on { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.set-mode-name { font-family: var(--display); font-size: 14px; font-weight: 800; color: var(--ink); }
+.set-mode-hint { font-size: 12px; line-height: 1.4; color: var(--ink-mute); }
+
+/* The sample is rendered by headerIslands(), the same function the board uses —
+   so what you see here cannot drift from what you will get. */
+.set-sample {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 16px;
+  background: var(--canvas); border-radius: var(--radius-xs); padding: 12px 14px; overflow-x: auto;
+}
+.set-sample-isle { display: flex; align-items: center; gap: 6px; }
+.set-sample-sep { width: 1px; height: 18px; margin: 0 5px; background: rgba(26,26,24,0.16); }
+.set-sample-label {
+  font-family: var(--display); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft)); padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+}
+.set-sample-tab {
+  font-size: 12px; font-weight: 700; color: var(--ink-soft); background: var(--surface);
+  box-shadow: var(--shadow-sm); padding: 5px 12px; border-radius: 9999px; white-space: nowrap;
+}
+
+/* Chosen mode: the projects, as chips you click. Off is a quiet outline, on is
+   filled with a tick — the state is the fill, not a control beside the name. */
+.set-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.set-pickopt {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  border: 1.5px solid var(--border); background: #FBFAF6; color: var(--ink-soft);
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  padding: 8px 15px; border-radius: 9999px;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.set-pickopt:hover { border-color: var(--ink-mute); color: var(--ink); }
+.set-pickopt.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.set-pickopt:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.set-pickopt svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+
+.set-grouplist { display: flex; flex-direction: column; gap: 8px; }
+.set-group { display: flex; align-items: center; gap: 11px; background: #FBFAF6; border-radius: var(--radius-xs); padding: 9px 11px; }
+.set-group .set-swatch { width: 12px; height: 12px; border-radius: 4px; }
+.set-group-name { flex: 1; min-width: 0; background: var(--surface); }
+.set-group-colors { display: flex; gap: 5px; flex-shrink: 0; }
+.set-group-colors .color-opt { width: 18px; height: 18px; border-width: 2px; }
+
+/* Assigning a project to a group: real buttons, not a native <select> — the
+   colours are the point, and no OS lets you style an <option>. */
+.set-grouppick { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.set-gopt {
+  border: 2px solid transparent; cursor: pointer; background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
+  font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 9999px;
+  transition: border-color 130ms var(--ease), transform 100ms var(--ease);
+}
+.set-gopt:hover { transform: translateY(-1px); }
+.set-gopt.on { border-color: var(--ink); }
 
 /* Horizon stepper */
 .set-inline { display: flex; align-items: center; }
@@ -1079,63 +1302,103 @@ button { font-family: inherit; }
      grows to its tallest column and the body scrolls. */
   .project-meta { display: none; }
 
-  /* ---- Compact mobile header ---- */
+  /* ---- Compact mobile header ----
+     One row, four controls: where you are · which project · which view · the ⋯
+     sheet that holds everything else (repo, reminder, navigation). The second
+     row this header used to carry cost ~50px on every screen, permanently. */
   .m-topbar { position: sticky; top: 0; z-index: 20; flex-shrink: 0; background: var(--canvas); border-bottom: 1px solid rgba(26,26,24,0.06); padding-top: env(safe-area-inset-top); }
-  .m-topbar-row { display: flex; align-items: center; gap: 12px; padding: 16px 14px 14px; }
-  .m-topbar-row2 { display: flex; align-items: center; gap: 8px; padding: 2px 14px 16px; }
+  .m-topbar-row { display: flex; align-items: center; gap: 8px; padding: 13px 12px 10px; }
   .m-topbar .brand { flex-shrink: 0; }
+  /* The project is the thing you switch most, so it sits hard right where the
+     thumb already is — not centred, not competing with the logo. */
   .m-proj {
-    flex: 0 1 auto; min-width: 0; max-width: 52%; display: flex; align-items: center; gap: 6px;
+    flex: 0 1 auto; min-width: 0; max-width: 62%; display: flex; align-items: center; gap: 6px;
     border: none; background: var(--surface); box-shadow: var(--shadow-sm); border-radius: 9999px;
-    padding: 11px 15px; font-family: var(--display); font-weight: 800; color: var(--ink); cursor: pointer;
+    padding: 10px 14px; font-family: var(--display); font-weight: 800; color: var(--ink); cursor: pointer;
   }
   .m-proj-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 15px; }
   .m-proj .ic { width: 13px; height: 13px; flex-shrink: 0; }
-  .m-menu { flex-shrink: 0; width: 44px; height: 44px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .m-menu { flex-shrink: 0; width: 40px; height: 40px; background: var(--surface); box-shadow: var(--shadow-sm); }
   .m-menu svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .m-topbar .save-state { min-width: 0; flex-shrink: 0; }
-  .m-topbar-row2 .view-toggle { flex: 1; min-width: 0; }
+  /* Saving is a dot, not a sentence — it only needs to be noticed, not read. */
+  .m-topbar .save-state { min-width: 0; flex-shrink: 0; font-size: 15px; line-height: 1; }
+
+  /* Board/Timeline keeps its own full-width row — the top row needs every pixel
+     for the project name — but it lives inside the header, so it sticks with it
+     rather than scrolling away over the canvas. */
+  .m-topbar-row2 { display: flex; padding: 0 12px 13px; }
+  .m-topbar-row2 .view-toggle { display: flex; width: 100%; }
   .m-topbar-row2 .view-opt { flex: 1; justify-content: center; padding: 10px; }
-  .m-topbar-row2 .repo-btn { flex-shrink: 0; max-width: 46%; }
 
   /* ---- Version bar → single horizontal-scroll strip (solid bg so the page grid
      doesn't show through the chrome above the board/timeline) ---- */
-  .version-bar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 8px 14px; gap: 6px; flex-shrink: 0; background: var(--canvas); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  /* The chips get room to breathe under the header rather than sitting straight
+     against its edge — the header is chrome, the versions are content. */
+  .version-bar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 18px 14px 8px; gap: 7px; flex-shrink: 0; background: var(--canvas); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .version-bar::-webkit-scrollbar { display: none; }
   .version-bar > * { flex-shrink: 0; }
-  .type-filter { margin-left: 6px; }
+  /* Folded into the strip: the filter loses its own panel and becomes three
+     chips that scroll with the versions, instead of a second pinned control. */
+  .version-bar .type-filter { margin-left: 4px; gap: 5px; padding: 0; background: transparent; box-shadow: none; }
+  .version-bar .tf-opt { background: var(--surface); box-shadow: var(--shadow-sm); padding: 7px 13px; font-size: 11.5px; }
+  .version-bar .tf-opt.active { background: var(--ink); color: #fff; }
+  .version-bar .tf-opt.bug.active { background: #E5484D; color: #fff; }
 
   /* ---- Board = Trello-style swipe columns ---- */
-  .board-pager { flex-shrink: 0; display: flex; gap: 6px; padding: 8px 14px 18px; }
+  .board-pager { flex-shrink: 0; display: flex; gap: 6px; padding: 6px 14px 14px; }
+  /* Left-aligned: the label starts at the same x in all three, so the row reads
+     as a list of sections rather than three floating centred words. */
   .pager-opt {
-    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px;
     border: none; background: var(--surface); box-shadow: var(--shadow-sm); border-radius: 9999px;
-    padding: 10px 6px; font-family: var(--display); font-weight: 800; font-size: 10.5px;
+    padding: 10px 12px; font-family: var(--display); font-weight: 800; font-size: 10.5px;
     text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); cursor: pointer;
+    text-align: left; white-space: nowrap; overflow: hidden;
   }
-  .pager-opt .dot { width: 8px; height: 8px; }
-  .pager-count { font-family: var(--mono); font-size: 10px; opacity: 0.7; }
+  .pager-opt .dot { flex-shrink: 0; width: 8px; height: 8px; }
+  .pager-count { margin-left: auto; font-family: var(--mono); font-size: 10px; opacity: 0.7; }
   .pager-opt.active { color: var(--ink); }
   .pager-opt.active[data-status="todo"] { background: var(--col-todo); }
   .pager-opt.active[data-status="inprogress"] { background: var(--col-prog); }
   .pager-opt.active[data-status="done"] { background: var(--col-done); }
 
   .board {
-    display: flex; grid-template-columns: none; gap: 0; padding: 0; align-items: start;
+    display: flex; grid-template-columns: none; gap: 0; padding: 0; align-items: stretch;
     overflow-x: auto; overflow-y: visible; scroll-snap-type: x mandatory;
     overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
   }
   .board::-webkit-scrollbar { display: none; }
-  /* Each column is its own height; the board is as tall as its tallest column and
-     the page scrolls. No fixed viewport height, so nothing gets clipped. */
+  /* align-items:stretch + flex:1 on the panel = every section fills the screen.
+     A column holding two cards still reads as a section, not as a card wearing a
+     coloured hat. The board is as tall as its tallest column and the page
+     scrolls — no fixed viewport height, so nothing gets clipped. */
   .board > .column {
     flex: 0 0 100%; width: 100%; scroll-snap-align: start;
     display: flex; flex-direction: column;
   }
   .board > .column .column-body {
-    flex: 1; min-height: 55vh; border-radius: 0; gap: 12px;
+    flex: 1; min-height: 50dvh; border-radius: 0; gap: 12px;
     padding: 14px 14px calc(28px + env(safe-area-inset-bottom));
   }
+  /* The in-column Add button is gone on touch — the floating button below does
+     the job from anywhere in the column, without being scrolled past. */
+  .board > .column .add-card { display: none; }
+
+  /* Floating add button: always reachable, bottom-right, clear of the home
+     indicator. It adds to whichever column you're looking at. */
+  .fab {
+    position: fixed; z-index: 40; right: 18px; bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 58px; height: 58px; border: none; cursor: pointer;
+    /* Squircle, not a circle: ~34% of the side, the same family of corner as the
+       cards and sheets it floats over. */
+    border-radius: 20px;
+    display: grid; place-items: center; background: var(--accent); color: var(--on-accent);
+    box-shadow: var(--shadow-lg); transition: transform 120ms var(--ease);
+  }
+  .fab:active { transform: scale(0.94); }
+  .fab svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+  /* The sheet editor covers the FAB; hiding it stops a stray tap behind a modal. */
+  .modal-overlay ~ .fab, .sheet-overlay ~ .fab { display: none; }
   .column.drop-target { transform: none; }         /* no drag on touch */
   .card:hover { transform: none; box-shadow: var(--shadow); }
   .card-menu.m-visible { opacity: 1; }
@@ -1176,6 +1439,16 @@ button { font-family: inherit; }
   .ag-card.done .ag-title { color: var(--ink-mute); text-decoration: line-through; text-decoration-color: rgba(26,26,24,0.35); }
   .ag-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
   .ag-menu { flex-shrink: 0; margin: -2px -4px 0 0; }
+  /* A milestone in the agenda: same day as the cards it sits with, but visibly
+     not one of them — it's the frame, not the work. */
+  .ag-ms {
+    display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-radius: var(--radius-sm);
+    background: var(--p-bg); color: var(--p-ink); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.06);
+  }
+  .ag-ms.done { opacity: 0.55; }
+  .ag-ms svg { flex-shrink: 0; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .ag-ms-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+  .ag-ms-word { flex-shrink: 0; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
 
   /* ---- Modal → bottom sheet ---- */
   .modal-overlay.as-sheet { background: rgba(26,26,24,0.4); }
@@ -1202,6 +1475,14 @@ button { font-family: inherit; }
   }
   .sheet-item:active { background: rgba(26,26,24,0.06); }
   .sheet-item.active { box-shadow: inset 0 0 0 2px var(--accent); }
+  /* A row that carries an icon + a state word (e.g. "Git repository — Linked"). */
+  .sheet-item-main { display: inline-flex; align-items: center; gap: 11px; min-width: 0; }
+  .sheet-item-main svg { flex-shrink: 0; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--ink-mute); }
+  .sheet-item-note { flex-shrink: 0; font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink-mute); }
+  /* A row whose control is a switch (the daily reminder, moved off the header). */
+  .sheet-toggle { display: flex; align-items: center; gap: 12px; background: var(--canvas); border-radius: 12px; padding: 12px 16px; }
+  .sheet-toggle-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: 15px; font-weight: 700; color: var(--ink); }
+  .sheet-toggle-label em { font-style: normal; font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--ink-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sheet-item.danger { color: var(--danger); background: var(--danger-soft); }
   .sheet-item.done { color: var(--green-ink); }
   .sheet-item .count { font-family: var(--mono); font-size: 11px; opacity: 0.6; }
@@ -1249,6 +1530,20 @@ button { font-family: inherit; }
   .set-confirm > .btn, .set-confirm form { flex: 1; }
   .set-confirm .btn { width: 100%; justify-content: center; }
   .set-frame { height: 340px; }
+  /* Seven day buttons don't fit beside the presets on a phone — wrap them. */
+  .set-day { width: 36px; height: 36px; }
+  .set-day-presets { width: 100%; margin: 4px 0 0; }
+  .set-preset { flex: 1; }
+  .set-modes { grid-template-columns: 1fr; }
+  .set-group { flex-wrap: wrap; }
+  .set-group-name { flex: 1 1 100%; order: -1; }
+  .set-grouppick { justify-content: flex-start; width: 100%; }
+  .set-proj { flex-wrap: wrap; }
+
+  /* Import: one column, the preview under the paste area. */
+  .imp { grid-template-columns: 1fr; }
+  .imp-text { height: 190px; font-size: 16px; }
+  .imp-preview { height: 230px; }
 
   /* ---- Auth ---- */
   .auth-screen { padding: 24px 16px; }

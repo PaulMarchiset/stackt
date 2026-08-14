@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import type { Project, Version } from '@/lib/types';
-import { versionTheme } from '@/lib/util';
+import type { Project, ProjectGroup, Version } from '@/lib/types';
+import { versionColor, versionTheme } from '@/lib/util';
+import { sortGroups } from '@/lib/headerProjects';
 import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
 import Modal from '@/app/board/Modal';
@@ -41,16 +42,17 @@ function ModeSelect({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
 }
 
 export default function ProjectsHome({
-  initialProjects, cards, userEmail, userName = ''
+  initialProjects, cards, groups = [], userEmail, userName = ''
 }: {
-  initialProjects: Project[]; cards: CardLite[]; userEmail: string; userName?: string;
+  initialProjects: Project[]; cards: CardLite[]; groups?: ProjectGroup[];
+  userEmail: string; userName?: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [devMode] = useDevMode();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [busy, setBusy] = useState(false);
-  const [editProj, setEditProj] = useState<{ id: string; name: string; mode: Mode } | null>(null);
+  const [editProj, setEditProj] = useState<{ id: string; name: string; mode: Mode; groupId: string | null } | null>(null);
   const [confirmDel, setConfirmDel] = useState<{ id: string; name: string } | null>(null);
   const [delText, setDelText] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -129,12 +131,13 @@ export default function ProjectsHome({
 
   async function saveEdit() {
     if (!editProj) return;
-    const { id } = editProj;
+    const { id, groupId } = editProj;
     const clean = editProj.name.trim() || 'Untitled';
     const dev_mode = modeToDev(editProj.mode);
+    const patch = { name: clean, dev_mode, group_id: groupId };
     setEditProj(null);
-    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, name: clean, dev_mode } : p)));
-    const { error } = await supabase.from('projects').update({ name: clean, dev_mode }).eq('id', id);
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    const { error } = await supabase.from('projects').update(patch).eq('id', id);
     if (error) { console.error('save failed:', error); showToast('Could not save — check your connection.'); }
   }
 
@@ -170,7 +173,7 @@ export default function ProjectsHome({
         </div>
         {menuId === p.id && (
           <div className="proj-menu" role="menu">
-            <button role="menuitem" onClick={() => { setEditProj({ id: p.id, name: p.name, mode: devToMode(p.dev_mode) }); setMenuId(null); }}>
+            <button role="menuitem" onClick={() => { setEditProj({ id: p.id, name: p.name, mode: devToMode(p.dev_mode), groupId: p.group_id }); setMenuId(null); }}>
               <svg viewBox="0 0 24 24"><path d="M12 20H21M3.00003 20H4.67457C5.16376 20 5.40835 20 5.63852 19.9447C5.84259 19.8957 6.03768 19.8149 6.21663 19.7053C6.41846 19.5816 6.59141 19.4086 6.93732 19.0627L19.5001 6.49998C20.3285 5.67156 20.3285 4.32841 19.5001 3.49998C18.6716 2.67156 17.3285 2.67156 16.5001 3.49998L3.93729 16.0627C3.59139 16.4086 3.41843 16.5816 3.29475 16.7834C3.18509 16.9624 3.10428 17.1574 3.05529 17.3615C3.00003 17.5917 3.00003 17.8363 3.00003 18.3255V20Z" /></svg> Edit
             </button>
             <button role="menuitem" className="danger" onClick={() => { setConfirmDel({ id: p.id, name: p.name }); setDelText(''); setMenuId(null); }}>
@@ -262,6 +265,20 @@ export default function ProjectsHome({
               onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditProj(null); }} />
             <label className="modal-form-label">Board mode</label>
             <ModeSelect value={editProj.mode} onChange={(m) => setEditProj({ ...editProj, mode: m })} />
+            {groups.length > 0 && (
+              <>
+                <label className="modal-form-label">Group <em>(headers the board in Groups mode)</em></label>
+                <div className="set-grouppick">
+                  <button type="button" className={'set-gopt' + (!editProj.groupId ? ' on' : '')}
+                    onClick={() => setEditProj({ ...editProj, groupId: null })}>None</button>
+                  {sortGroups(groups).map((g) => (
+                    <button type="button" key={g.id}
+                      className={'set-gopt card-theme-' + (versionColor(g) ?? 0) + (editProj.groupId === g.id ? ' on' : '')}
+                      onClick={() => setEditProj({ ...editProj, groupId: g.id })}>{g.name}</button>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="edit-actions">
               <div className="meta-spacer" />
               <button className="btn ghost" onClick={() => setEditProj(null)}>Cancel</button>
