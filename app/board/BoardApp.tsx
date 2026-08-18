@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
-import { headerIslands } from '@/lib/grouping';
+import { headerIslands, projectSections } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
 import { useHeaderItems } from '@/lib/useHeaderItems';
 import { useIsMobile } from '@/lib/useIsMobile';
@@ -431,14 +431,25 @@ export default function BoardApp({
               onBlur={(e) => store.patchProject(project.id, { name: e.target.value.trim() || 'Untitled' })} />
           </div>
           <div className="sheet-section-label">Switch project</div>
+          {/* Grouped like the projects page, minus Favorites: the sheet lists
+              every project once, and a name showing twice in a switcher is a
+              trap rather than a shortcut. With no groups this is one unlabelled
+              run — exactly the flat list it has always been. */}
           <div className="sheet-list">
-            {projects.map((p) => (
-              <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
-                onClick={() => { selectProject(p.id); setSheet(null); }}>
-                {p.name || 'Untitled'}
-                <span className="count">{openCount(p.id)}</span>
-              </button>
-            ))}
+            {projectSections(projects, groups)
+              .filter((s) => s.kind !== 'favorites' && s.projects.length > 0)
+              .map((s) => (
+                <div key={s.key} className={'sheet-band' + (s.colorIndex !== null ? ' card-theme-' + s.colorIndex : '')}>
+                  {s.kind === 'group' && <div className="sheet-band-label">{s.label}</div>}
+                  {s.projects.map((p) => (
+                    <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
+                      onClick={() => { selectProject(p.id); setSheet(null); }}>
+                      {p.name || 'Untitled'}
+                      <span className="count">{openCount(p.id)}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
           </div>
           <a className="sheet-item link" href="/projects">All projects →</a>
         </Sheet>

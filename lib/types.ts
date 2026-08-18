@@ -46,7 +46,7 @@ export interface Project {
   active_version_id: string | null; // FK → versions.id (source of truth)
   group_id: string | null; // FK → project_groups.id; null = ungrouped
   favorite: boolean;
-  pinned: boolean; // hand-picked for the header in 'custom' mode
+
   repo_url: string; // base URL of the git repository (optional; '' when unset)
   position: number;
   dev_mode: boolean | null; // per-project override of developer mode; null = follow the device default

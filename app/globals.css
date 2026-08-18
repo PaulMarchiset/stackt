@@ -1528,6 +1528,15 @@ button { font-family: inherit; }
   .sheet-body { display: flex; flex-direction: column; gap: 6px; }
   .sheet-section-label { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); margin: 8px 2px 2px; }
   .sheet-list, .sheet-moves { display: flex; flex-direction: column; gap: 6px; }
+  /* Groups in the project switcher: the same label the header wears on a tab run. */
+  .sheet-band { display: flex; flex-direction: column; gap: 6px; }
+  .sheet-band + .sheet-band { margin-top: 10px; }
+  .sheet-band-label {
+    align-self: flex-start; font-family: var(--display); font-size: 9.5px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
+    padding: 4px 9px; border-radius: 7px;
+  }
   .sheet-item {
     display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
     border: none; background: var(--canvas); color: var(--ink); font-family: var(--sans); font-size: 15px; font-weight: 700;
