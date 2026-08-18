@@ -1,7 +1,7 @@
 'use client';
 
 import type { Project } from '@/lib/types';
-import type { ProjectIsland } from '@/lib/headerProjects';
+import type { ProjectIsland } from '@/lib/grouping';
 import { repoLabel, versionTheme } from '@/lib/util';
 import AccountMenu from '@/app/components/AccountMenu';
 import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconTimeline } from '@/app/components/icons';

@@ -2,14 +2,20 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { headerIslands, sortGroups } from '@/lib/headerProjects';
+import { headerIslands, itemsFromMode, sortGroups } from '@/lib/grouping';
 import { usePersist } from '@/lib/usePersist';
 import { versionColor } from '@/lib/util';
-import {
-  DEFAULT_USER_PREFS, HEADER_MODES, PALETTE,
-  type HeaderMode, type Project, type ProjectGroup
-} from '@/lib/types';
+import { PALETTE, type HeaderMode, type Project, type ProjectGroup } from '@/lib/types';
 import { IconPlus, IconTick, IconTrash } from '@/app/components/icons';
+
+/* The three exclusive modes this screen still speaks. They live here rather
+   than in the shared model because the model has moved on to a composed list —
+   these are transitional, and go away with the screen. */
+const HEADER_MODES: { key: HeaderMode; label: string; hint: string }[] = [
+  { key: 'favorites', label: 'Favorites', hint: 'The projects you starred' },
+  { key: 'custom', label: 'Chosen', hint: 'A set you pick by hand' },
+  { key: 'groups', label: 'Groups', hint: 'Your groups, side by side' }
+];
 
 type ProjRow = Pick<Project, 'id' | 'name' | 'group_id' | 'favorite' | 'pinned' | 'position'>;
 
@@ -32,7 +38,7 @@ export default function HeaderProjects({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { persist, persistRow } = usePersist(onToast);
-  const [mode, setMode] = useState<HeaderMode>(DEFAULT_USER_PREFS.header_mode);
+  const [mode, setMode] = useState<HeaderMode>('favorites');
   const [projects, setProjects] = useState<ProjRow[]>([]);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +53,9 @@ export default function HeaderProjects({
         supabase.from('project_groups').select('*').order('position'),
         supabase.from('user_prefs').select('header_mode').eq('user_id', userId).maybeSingle()
       ]);
+      /* Transitional: this screen still speaks in modes while the board already
+         reads the composed list, so every write below keeps both in step. The
+         mode column, and this whole bridge, go away with the composer. */
       if (!alive) return;
       setProjects((projRes.data as ProjRow[]) || []);
       setGroups((grpRes.data as ProjectGroup[]) || []);
@@ -60,20 +69,31 @@ export default function HeaderProjects({
      forget, and the sample below updates as the row lands. */
   const RETRY = 'Could not save — try again.';
 
-  async function saveMode(next: HeaderMode) {
+  /* The mode the account stores, and the list the board actually reads, written
+     together. Callers hand in the state they just produced, because a mode is
+     only half the answer: 'custom' reads the pins and 'groups' reads the groups,
+     so both have to be the post-change ones. */
+  function saveMode(next: HeaderMode, nextProjects: ProjRow[] = projects, nextGroups: ProjectGroup[] = groups) {
     const prev = mode;
     setMode(next);
     void persist(
-      supabase.from('user_prefs').upsert({ user_id: userId, header_mode: next, updated_at: new Date().toISOString() }),
+      supabase.from('user_prefs').upsert({
+        user_id: userId,
+        header_mode: next,
+        header_items: itemsFromMode(next, nextProjects as Project[], nextGroups),
+        updated_at: new Date().toISOString()
+      }),
       { message: RETRY, onError: () => setMode(prev) }
     );
   }
 
   async function patchProject(id: string, patch: Partial<ProjRow>) {
     const before = projects;
-    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    const next = projects.map((p) => (p.id === id ? { ...p, ...patch } : p));
+    setProjects(next);
     void persist(supabase.from('projects').update(patch).eq('id', id),
       { message: RETRY, onError: () => setProjects(before) });
+    if (mode === 'custom' && 'pinned' in patch) saveMode('custom', next);
   }
 
   async function addGroup() {
@@ -87,9 +107,11 @@ export default function HeaderProjects({
     );
     setBusy(false);
     if (!created) return;
-    setGroups((gs) => [...gs, created]);
+    const next = [...groups, created];
+    setGroups(next);
     setNewName('');
-    if (mode !== 'groups') void saveMode('groups');   // you just made one — show it
+    // You just made one — show it, and in groups mode the list grows with it.
+    saveMode('groups', projects, next);
   }
 
   async function patchGroup(id: string, patch: Partial<ProjectGroup>) {
@@ -103,16 +125,18 @@ export default function HeaderProjects({
      group_id to null and they reappear in the trailing island. */
   async function deleteGroup(id: string) {
     const beforeGroups = groups, beforeProjects = projects;
-    setGroups((gs) => gs.filter((g) => g.id !== id));
+    const nextGroups = groups.filter((g) => g.id !== id);
+    setGroups(nextGroups);
     setProjects((ps) => ps.map((p) => (p.group_id === id ? { ...p, group_id: null } : p)));
     void persist(supabase.from('project_groups').delete().eq('id', id), {
       message: 'Could not delete the group — try again.',
       onError: () => { setGroups(beforeGroups); setProjects(beforeProjects); }
     });
+    if (mode === 'groups') saveMode('groups', projects, nextGroups);
   }
 
   const sample = useMemo(
-    () => headerIslands(mode, projects as Project[], groups, projects[0]?.id ?? null),
+    () => headerIslands(itemsFromMode(mode, projects as Project[], groups), projects as Project[], groups, projects[0]?.id ?? null),
     [mode, projects, groups]
   );
 

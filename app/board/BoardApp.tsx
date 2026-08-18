@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderMode, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
+import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
-import { headerIslands } from '@/lib/headerProjects';
+import { headerIslands } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { useDevMode } from '@/lib/useDevMode';
@@ -36,11 +36,11 @@ type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: 
  */
 export default function BoardApp({
   initialProjects, initialCards, initialVersions,
-  groups = [], headerMode = DEFAULT_USER_PREFS.header_mode,
+  groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
   userEmail, userName = '', initialActiveId
 }: {
   initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
-  groups?: ProjectGroup[]; headerMode?: HeaderMode;
+  groups?: ProjectGroup[]; headerItems?: HeaderItem[];
   userEmail: string; userName?: string; initialActiveId?: string | null;
 }) {
   const store = useBoardStore(initialProjects, initialCards, initialVersions);
@@ -95,10 +95,10 @@ export default function BoardApp({
   const versionName = (id: string | null | undefined) => (id ? versionById.get(id)?.name ?? '' : '');
   const openCount = (projectId: string) => cards.filter((c) => c.project_id === projectId && !c.done).length;
   // Which projects head the board, and how they're segmented — an account
-  // setting, resolved by one pure function (lib/headerProjects.ts).
+  // setting, resolved by one pure function (lib/grouping.ts).
   const islands = useMemo(
-    () => headerIslands(headerMode, projects, groups, activeId),
-    [headerMode, projects, groups, activeId]
+    () => headerIslands(headerItems, projects, groups, activeId),
+    [headerItems, projects, groups, activeId]
   );
   /* Which island each tab belongs to. Dragging reorders projects, it does not
      re-group them — so a drag that crosses an island boundary is refused rather

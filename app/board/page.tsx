@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { DEFAULT_USER_PREFS, type HeaderMode, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
+import { DEFAULT_USER_PREFS, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
+import { parseHeaderItems } from '@/lib/grouping';
 import BoardApp from './BoardApp';
 
 export const dynamic = 'force-dynamic';
@@ -23,8 +24,12 @@ export default async function BoardPage({
     supabase.from('cards').select('*').order('created_at'),
     supabase.from('versions').select('*').order('position'),
     supabase.from('project_groups').select('*').order('position'),
-    supabase.from('user_prefs').select('header_mode').eq('user_id', user.id).maybeSingle()
+    supabase.from('user_prefs').select('header_items').eq('user_id', user.id).maybeSingle()
   ]);
+
+  /* An account with no row, an empty list, or a list whose every entry points at
+     something deleted all mean the same thing: head the board the default way. */
+  const items: HeaderItem[] = parseHeaderItems(prefs?.header_items);
 
   return (
     <BoardApp
@@ -32,7 +37,7 @@ export default async function BoardPage({
       initialCards={(cards ?? []) as Card[]}
       initialVersions={(versions ?? []) as Version[]}
       groups={(groups ?? []) as ProjectGroup[]}
-      headerMode={(prefs?.header_mode as HeaderMode) ?? DEFAULT_USER_PREFS.header_mode}
+      headerItems={items.length ? items : DEFAULT_USER_PREFS.header_items}
       userEmail={user.email ?? ''}
       userName={(user.user_metadata?.username as string) ?? ''}
       initialActiveId={searchParams.p ?? null}

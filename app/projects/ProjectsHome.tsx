@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Project, ProjectGroup, Version } from '@/lib/types';
 import { versionColor, versionTheme } from '@/lib/util';
-import { sortGroups } from '@/lib/headerProjects';
+import { sortGroups } from '@/lib/grouping';
 import { useDevMode } from '@/lib/useDevMode';
 import { usePersist } from '@/lib/usePersist';
 import { useToast } from '@/lib/useToast';

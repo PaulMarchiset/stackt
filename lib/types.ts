@@ -63,26 +63,37 @@ export interface ProjectGroup {
   position: number;
 }
 
-/* Which projects head the board:
-   · favorites — the starred ones (the default; no setup required)
-   · custom    — a hand-picked set (projects.pinned)
-   · groups    — every group, side by side as islands            */
-export type HeaderMode = 'favorites' | 'custom' | 'groups';
+/**
+ * One entry of the board header, in the order they are shown. Three kinds, one
+ * list — a header is *composed* rather than switched between exclusive modes:
+ *   · favorites — every starred project, as one island
+ *   · group     — that group's projects, labelled with the group's name
+ *   · project   — a single project, standing on its own
+ * Ids point at rows that can be deleted; the resolver drops entries that no
+ * longer resolve (see lib/grouping.ts), so a stale id is inert, never an error.
+ */
+export type HeaderItem =
+  | { kind: 'favorites' }
+  | { kind: 'group'; id: string }
+  | { kind: 'project'; id: string };
 
-export const HEADER_MODES: { key: HeaderMode; label: string; hint: string }[] = [
-  { key: 'favorites', label: 'Favorites', hint: 'The projects you starred' },
-  { key: 'custom', label: 'Chosen', hint: 'A set you pick by hand' },
-  { key: 'groups', label: 'Groups', hint: 'Your groups, side by side' }
-];
+export const HEADER_ITEM_KINDS = ['favorites', 'group', 'project'] as const;
+
+/* No setup required: a new account heads its board with its favorites. */
+export const DEFAULT_HEADER_ITEMS: HeaderItem[] = [{ kind: 'favorites' }];
+
+/* The three exclusive modes header_items replaced. Read only by the transition
+   helper in lib/grouping.ts; migration 0008 drops the column. */
+export type HeaderMode = 'favorites' | 'custom' | 'groups';
 
 /* Account-wide settings. A missing row means these defaults. */
 export interface UserPrefs {
   user_id: string;
-  header_mode: HeaderMode;
+  header_items: HeaderItem[];
 }
 
 export const DEFAULT_USER_PREFS: Omit<UserPrefs, 'user_id'> = {
-  header_mode: 'favorites'
+  header_items: DEFAULT_HEADER_ITEMS
 };
 
 export type EmailSection = 'overdue' | 'today' | 'upcoming' | 'undated' | 'milestones';
