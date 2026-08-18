@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import type { Project, ProjectGroup } from '@/lib/types';
 import { groupColor, sortGroups } from '@/lib/grouping';
+import { isAfterMidpoint } from '@/lib/useDragSort';
 import { versionTheme } from '@/lib/util';
 import { IconDots, IconGrip, IconPencil, IconPlus, IconStar, IconTick, IconTrash } from '@/app/components/icons';
 
@@ -16,14 +18,18 @@ export function initials(name: string): string {
 /**
  * One project on the projects page.
  *
- * The ⋯ menu carries the group picker rather than hiding it behind Edit: moving
- * a project is the most frequent thing you do here, and it should cost one
- * click, not a dialog. It is also the whole story on touch, where dragging a
- * card is not an option.
+ * The ⋯ menu carries the group picker rather than hiding it behind Edit:
+ * moving a project is the most frequent thing done on this page, and it should
+ * cost one click. It is also the whole story on touch, where `drag` is absent
+ * and the card has no handle.
+ *
+ * Dragging is armed by the grip, not by the card: the card is mostly a link,
+ * and links drag themselves by default. Holding the grip is what makes the
+ * card draggable at all, so a stray drag on the title still opens the board.
  */
 export default function ProjectCard({
-  project, meta, groups, menuOpen, dragging,
-  onMenu, onEdit, onDelete, onToggleFavorite, onMove, onNewGroup, onDragStart, onDragEnd
+  project, meta, groups, menuOpen,
+  onMenu, onEdit, onDelete, onToggleFavorite, onMove, onNewGroup, drag
 }: {
   project: Project;
   meta: string;
@@ -35,19 +41,37 @@ export default function ProjectCard({
   onToggleFavorite: () => void;
   onMove: (groupId: string | null) => void;
   onNewGroup: () => void;
-  /* Dragging is a desktop affordance the page hands down; without it the card
-     is simply not draggable, which is exactly the case on touch. */
-  dragging?: boolean;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
+  /* Desktop only — left off, the card simply isn't draggable. */
+  drag?: {
+    dragging: boolean;
+    dropSide: 'before' | 'after' | null;
+    onStart: () => void;
+    onOver: (after: boolean) => void;
+    onEnd: () => void;
+  };
 }) {
   const p = project;
+  const [armed, setArmed] = useState(false);
+
   return (
-    <div className={'proj-card' + (dragging ? ' dragging' : '')}
-      draggable={!!onDragStart}
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(); }}
-      onDragEnd={onDragEnd}>
-      {onDragStart && <span className="proj-grip" aria-hidden><IconGrip /></span>}
+    <div
+      className={'proj-card'
+        + (drag?.dragging ? ' dragging' : '')
+        + (drag?.dropSide ? ' drop-' + drag.dropSide : '')}
+      draggable={armed}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; drag?.onStart(); }}
+      onDragEnd={() => { setArmed(false); drag?.onEnd(); }}
+      onDragOver={drag && ((e) => {
+        e.preventDefault();
+        e.stopPropagation();          // the band would otherwise claim the drop for its end
+        drag.onOver(isAfterMidpoint(e, e.currentTarget));
+      })}>
+      {drag && (
+        <span className="proj-grip" title="Drag to move or reorder"
+          onMouseDown={() => setArmed(true)} onMouseUp={() => setArmed(false)}>
+          <IconGrip />
+        </span>
+      )}
       <div className="proj-actions">
         <button className={'proj-fav' + (p.favorite ? ' on' : '')}
           title={p.favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -65,14 +89,15 @@ export default function ProjectCard({
           <button role="menuitem" className="danger" onClick={onDelete}><IconTrash /> Delete</button>
           <div className="proj-menu-sep" />
           <div className="proj-menu-head">Move to</div>
-          <button role="menuitemradio" aria-checked={!p.group_id} className={!p.group_id ? ' on' : ''}
+          <button role="menuitemradio" aria-checked={!p.group_id} className={!p.group_id ? 'on' : ''}
             onClick={() => onMove(null)}>
-            <span className="proj-menu-dot none" />No group
+            <span className="proj-menu-dot none" />
+            <span className="proj-menu-label">No group</span>
             {!p.group_id && <IconTick className="proj-menu-tick" />}
           </button>
           {sortGroups(groups).map((g) => (
             <button key={g.id} role="menuitemradio" aria-checked={p.group_id === g.id}
-              className={p.group_id === g.id ? ' on' : ''} onClick={() => onMove(g.id)}>
+              className={p.group_id === g.id ? 'on' : ''} onClick={() => onMove(g.id)}>
               <span className={'proj-menu-dot card-theme-' + groupColor(g)} />
               <span className="proj-menu-label">{g.name}</span>
               {p.group_id === g.id && <IconTick className="proj-menu-tick" />}
@@ -82,7 +107,7 @@ export default function ProjectCard({
         </div>
       )}
 
-      <a className="proj-open" href={'/board?p=' + p.id}>
+      <a className="proj-open" href={'/board?p=' + p.id} draggable={false}>
         <span className={'proj-mark card-theme-' + versionTheme(p.name)}>{initials(p.name)}</span>
         <h2 className="proj-name">{p.name || 'Untitled'}</h2>
         <p className="proj-meta">{meta}</p>

@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Project, ProjectGroup, Version } from '@/lib/types';
-import { projectSections } from '@/lib/grouping';
+import { applyProjectDrop, projectSections, sortGroups, type ProjectSection } from '@/lib/grouping';
 import { useDevMode } from '@/lib/useDevMode';
+import { useDragSort } from '@/lib/useDragSort';
+import { useIsMobile } from '@/lib/useIsMobile';
 import { useProjectsStore } from '@/lib/useProjectsStore';
 import { useToast } from '@/lib/useToast';
 import { vocab } from '@/lib/labels';
@@ -64,6 +66,11 @@ export default function ProjectsHome({
   const { toast, showToast } = useToast();
   const store = useProjectsStore(initialProjects, initialGroups, showToast);
   const { projects, groups, supabase, persistRow } = store;
+  /* Dragging is a pointer affordance. On touch there is no handle at all and
+     the ⋯ menus do the same work in one tap, so the whole apparatus is simply
+     not handed down. */
+  const dnd = useDragSort();
+  const isMobile = useIsMobile();
 
   const [busy, setBusy] = useState(false);
   const [editProj, setEditProj] = useState<{ id: string; name: string; mode: Mode } | null>(null);
@@ -169,11 +176,41 @@ export default function ProjectsHome({
      something: an empty "Favorites" heading teaches nothing. */
   const bands = sections.filter((s) => s.kind === 'group' || s.projects.length > 0);
 
-  const card = (p: Project) => {
+  /* Turning a drop into a new order is one pure function (applyProjectDrop);
+     the page only reports what was dropped where and hands the result to the
+     store, which renumbers and writes the rows that actually changed. */
+  function dropProject() {
+    const d = dnd.drag;
+    if (d?.kind !== 'project' || !d.over) { dnd.end(); return; }
+    store.writeProjectOrder(applyProjectDrop(projects, sections, d.id, d.over.section, d.over.index));
+    dnd.end();
+  }
+
+  function dropGroup() {
+    const d = dnd.drag;
+    if (d?.kind !== 'group' || !d.overKey) { dnd.end(); return; }
+    const ordered = sortGroups(groups);
+    const from = ordered.findIndex((g) => g.id === d.id);
+    const to = ordered.findIndex((g) => g.id === d.overKey);
+    if (from >= 0 && to >= 0) store.reorderGroups(from, to);
+    dnd.end();
+  }
+
+  /* `others` is the band without the card in flight, which is what an insertion
+     index has to count: dropping "third in this band" means the same thing
+     whether or not the card was already one of its members. */
+  const card = (p: Project, section: ProjectSection, others: Project[]) => {
     const { u, b } = counts(p.id);
     const pv = vocab(p.dev_mode ?? devMode);
     const meta = u + ' ' + (u !== 1 ? pv.updates : pv.update).toLowerCase()
       + (b ? ' · ' + b + ' ' + (b !== 1 ? pv.bugs : pv.bug).toLowerCase() : '');
+    const at = others.findIndex((x) => x.id === p.id);
+    /* One gap, one marker: the bar between two cards belongs to the card on its
+       right, and only the last card can wear one on its own right. */
+    const dropSide = dnd.dropSection !== section.key || at < 0 ? null
+      : dnd.dropIndex === at ? 'before'
+        : dnd.dropIndex === at + 1 && at === others.length - 1 ? 'after' : null;
+
     return (
       <ProjectCard key={p.id} project={p} meta={meta} groups={groups}
         menuOpen={menu?.kind === 'project' && menu.id === p.id}
@@ -182,7 +219,14 @@ export default function ProjectsHome({
         onDelete={() => { setConfirmDel({ id: p.id, name: p.name }); setDelText(''); setMenu(null); }}
         onToggleFavorite={() => store.patchProject(p.id, { favorite: !p.favorite })}
         onMove={(groupId) => { store.patchProject(p.id, { group_id: groupId }); setMenu(null); }}
-        onNewGroup={() => { setNewGroup({ forProject: p.id }); setMenu(null); }} />
+        onNewGroup={() => { setNewGroup({ forProject: p.id }); setMenu(null); }}
+        drag={isMobile ? undefined : {
+          dragging: dnd.draggingProject === p.id,
+          dropSide,
+          onStart: () => dnd.startProject(p.id),
+          onOver: (after) => { if (at >= 0) dnd.overProject(section.key, after ? at + 1 : at); },
+          onEnd: dnd.end
+        }} />
     );
   };
 
@@ -208,21 +252,42 @@ export default function ProjectsHome({
 
       {projects.length === 0 && groups.length === 0 ? (
         <div className="home-grid"><div className="empty-hint">No projects yet — create your first one.</div></div>
-      ) : bands.map((section) => (
-        <GroupBand key={section.key} section={section} groupsExist={groups.length > 0}
-          menuOpen={menu?.kind === 'band' && menu.id === section.key}
-          onMenu={() => setMenu(menu?.kind === 'band' && menu.id === section.key ? null : { kind: 'band', id: section.key })}
-          onRename={(name) => { if (section.group) store.patchGroup(section.group.id, { name }); }}
-          onRecolor={(i) => { if (section.group) { store.patchGroup(section.group.id, { color_index: i }); setMenu(null); } }}
-          onDelete={() => { setConfirmDelGroup(section.group); setMenu(null); }}>
-          <div className="home-grid">
-            {section.projects.map(card)}
-            {section.projects.length === 0 && (
-              <div className="empty-hint band-empty">Nothing here yet — move a project in from its ⋯ menu.</div>
-            )}
-          </div>
-        </GroupBand>
-      ))}
+      ) : bands.map((section) => {
+        const g = section.group;
+        const others = section.projects.filter((p) => p.id !== dnd.draggingProject);
+        return (
+          <GroupBand key={section.key} section={section} groupsExist={groups.length > 0}
+            menuOpen={menu?.kind === 'band' && menu.id === section.key}
+            onMenu={() => setMenu(menu?.kind === 'band' && menu.id === section.key ? null : { kind: 'band', id: section.key })}
+            onRename={(name) => { if (g) store.patchGroup(g.id, { name }); }}
+            onRecolor={(i) => { if (g) { store.patchGroup(g.id, { color_index: i }); setMenu(null); } }}
+            onDelete={() => { setConfirmDelGroup(g); setMenu(null); }}
+            receiving={dnd.dropSection === section.key}
+            drag={isMobile || !g ? undefined : {
+              dragging: dnd.draggingGroup === g.id,
+              over: dnd.groupDropKey === g.id && dnd.draggingGroup !== g.id,
+              onStart: () => dnd.startGroup(g.id),
+              onOver: () => dnd.overGroup(g.id),
+              onDrop: dropGroup,
+              onEnd: dnd.end
+            }}>
+            {/* The grid is the band's own drop zone: anything not caught by a
+                card lands at the end, which is also what an empty band means. */}
+            <div className="home-grid"
+              onDragOver={isMobile || !dnd.draggingProject ? undefined
+                : (e) => { e.preventDefault(); dnd.overProject(section.key, others.length); }}
+              onDrop={isMobile ? undefined : (e) => { e.preventDefault(); dropProject(); }}>
+              {section.projects.map((p) => card(p, section, others))}
+              {section.projects.length === 0 && (
+                <div className="empty-hint band-empty">
+                  {isMobile ? 'Nothing here yet — move a project in from its ⋯ menu.'
+                    : 'Nothing here yet — drag a project in, or move it from its ⋯ menu.'}
+                </div>
+              )}
+            </div>
+          </GroupBand>
+        );
+      })}
 
       {newGroup && (
         <PromptDialog title="New group" label="Name" placeholder="e.g. Clients" submitLabel="Create" required

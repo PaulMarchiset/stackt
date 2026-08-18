@@ -230,3 +230,51 @@ export function projectSections(projects: Project[], groups: ProjectGroup[]): Pr
   });
   return sections;
 }
+
+/**
+ * Where a dragged project lands: the whole project list, reordered, with the
+ * regrouping the drop implies already applied.
+ *
+ * Dropping is two statements at once — "it belongs here" and "it goes there" —
+ * and both fall out of which band received it:
+ *   · Favorites  — it becomes a favourite; its group is none of Favorites'
+ *                  business, so it keeps it.
+ *   · a group    — it joins that group.
+ *   · Ungrouped  — it leaves whatever group it was in.
+ *
+ * Order is one global sequence (projects.position), the same one the board
+ * header reads for its tabs, so a drop is expressed by re-inserting the project
+ * next to its new *neighbours in that band* rather than at some index of its
+ * own. `index` counts the band's other members, so it is stable whether or not
+ * the project was already in the band. A project dropped into an empty band has
+ * no neighbours to anchor to and goes last, where it is the only thing anyway.
+ */
+export function applyProjectDrop(
+  projects: Project[],
+  sections: ProjectSection[],
+  draggedId: string,
+  sectionKey: string,
+  index: number
+): Project[] {
+  const dragged = projects.find((p) => p.id === draggedId);
+  const section = sections.find((s) => s.key === sectionKey);
+  if (!dragged || !section) return projects;
+
+  const moved: Project = {
+    ...dragged,
+    favorite: section.kind === 'favorites' ? true : dragged.favorite,
+    group_id: section.kind === 'group' ? (section.group?.id ?? null)
+      : section.kind === 'ungrouped' ? null : dragged.group_id
+  };
+
+  const rest = projects.filter((p) => p.id !== draggedId);
+  const neighbours = section.projects.filter((p) => p.id !== draggedId);
+  const anchor = (id: string) => rest.findIndex((p) => p.id === id);
+  const at = neighbours.length === 0 ? rest.length
+    : index >= neighbours.length ? anchor(neighbours[neighbours.length - 1].id) + 1
+      : anchor(neighbours[index].id);
+
+  const next = rest.slice();
+  next.splice(at < 0 ? rest.length : at, 0, moved);
+  return next;
+}

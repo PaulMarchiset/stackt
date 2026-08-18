@@ -1191,7 +1191,7 @@ button { font-family: inherit; }
    editable where it stands. */
 .home-band + .home-band { margin-top: 6px; }
 .home-band .home-grid { padding-bottom: 26px; }
-.band-head { display: flex; align-items: center; gap: 9px; padding: 20px 28px 0; }
+.band-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 20px 28px 0; }
 .band-title { font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 0; }
 .band-title.muted { color: var(--ink-mute); }
 .band-star { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; flex-shrink: 0; }
@@ -1219,6 +1219,48 @@ button { font-family: inherit; }
 .band-menu-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* An empty group is a promise, not a mistake — it spans the grid and says what to do. */
 .band-empty { grid-column: 1 / -1; }
+
+/* ---- Dragging: cards between bands, bands among themselves ----
+   Grips stay invisible until you hover the thing they belong to: the page is
+   a wall of cards, and six dots on every one of them is noise. Holding a grip
+   is also what arms the drag, so the card's link keeps working everywhere else. */
+.proj-grip {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 18px; z-index: 2;
+  display: grid; place-items: center; color: var(--ink-mute); cursor: grab; opacity: 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  transition: opacity 140ms var(--ease), background 140ms var(--ease);
+}
+.band-grip {
+  position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 22px; display: grid; place-items: center;
+  color: var(--ink-mute); cursor: grab; opacity: 0; transition: opacity 140ms var(--ease);
+}
+.proj-card:hover .proj-grip, .band-head:hover .band-grip { opacity: 0.6; }
+.proj-grip:hover, .band-grip:hover { opacity: 1; }
+.proj-grip:hover { background: rgba(26, 26, 24, 0.05); }
+.proj-grip:active, .band-grip:active { cursor: grabbing; }
+.proj-grip svg, .band-grip svg { fill: currentColor; stroke: none; }
+.proj-grip svg { width: 15px; height: 15px; }
+.band-grip svg { width: 13px; height: 13px; }
+
+/* What is in flight fades; where it would land is marked. */
+.proj-card.dragging { opacity: 0.38; }
+.proj-card.drop-before::before, .proj-card.drop-after::after {
+  content: ""; position: absolute; top: 6px; bottom: 6px; width: 3px;
+  border-radius: 2px; background: var(--accent);
+}
+.proj-card.drop-before::before { left: -9px; }
+.proj-card.drop-after::after { right: -9px; }
+
+/* The band about to receive the card tints whole: a drop changes which band a
+   project belongs to, so the band is the thing that has to answer. */
+.home-band { border-radius: 18px; transition: background 160ms var(--ease); }
+.home-band.band-receiving { background: var(--accent-soft); }
+.home-band.band-dragging { opacity: 0.5; }
+.home-band.band-over .band-head::before {
+  content: ""; position: absolute; left: 28px; right: 28px; top: 9px;
+  height: 3px; border-radius: 2px; background: var(--accent);
+}
 
 /* ---------- Auth ---------- */
 .auth-screen { min-height: 100%; display: grid; place-items: center; padding: 40px 20px; }
@@ -1549,8 +1591,10 @@ button { font-family: inherit; }
   .home-top { gap: 12px; padding: 16px 14px 14px; padding-top: calc(16px + env(safe-area-inset-top)); min-height: calc(74px + env(safe-area-inset-top)); }
   .home-head { padding: 20px 16px 14px; flex-wrap: wrap; gap: 12px; }
   .home-title { font-size: 26px; }
-  .home-section { padding: 0 16px; }
+  .band-head { padding: 18px 16px 0; }
+  .home-band.band-over .band-head::before { left: 16px; right: 16px; }
   .home-grid { grid-template-columns: 1fr; padding: 6px 16px 40px; gap: 12px; }
+  .home-band .home-grid { padding-bottom: 22px; }
   .proj-card:hover { transform: none; }
   .proj-actions button { opacity: 1; }
 

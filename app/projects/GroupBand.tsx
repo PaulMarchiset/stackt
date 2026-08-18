@@ -3,19 +3,20 @@
 import { useEffect, useState } from 'react';
 import type { ProjectSection } from '@/lib/grouping';
 import { PALETTE } from '@/lib/types';
-import { IconDots, IconStar, IconTrash } from '@/app/components/icons';
+import { IconDots, IconGrip, IconStar, IconTrash } from '@/app/components/icons';
 
 /**
  * One band of the projects page: a heading, and the projects under it.
  *
  * The three kinds share one heading shape on purpose — Favorites, a group and
  * Ungrouped are read as siblings, and a group only distinguishes itself by the
- * one thing that is actually different: it has a colour and it can be renamed.
- * Renaming happens in place, in the heading itself, because the name you are
- * fixing is the one you are looking at.
+ * two things that are actually different: it has a colour, and its name can be
+ * fixed where it stands, on the heading you are looking at.
+ *
+ * Only a group can be reordered, so only a group's heading grows a grip.
  */
 export default function GroupBand({
-  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, children
+  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, drag, receiving, children
 }: {
   section: ProjectSection;
   groupsExist: boolean;
@@ -24,9 +25,22 @@ export default function GroupBand({
   onRename: (name: string) => void;
   onRecolor: (index: number) => void;
   onDelete: () => void;
+  /* Desktop only, and groups only — the two implicit bands have no order of
+     their own: Favorites always leads, Ungrouped always trails. */
+  drag?: {
+    dragging: boolean;
+    over: boolean;
+    onStart: () => void;
+    onOver: () => void;
+    onDrop: () => void;
+    onEnd: () => void;
+  };
+  /* A dragged project would land in this band. */
+  receiving?: boolean;
   children: React.ReactNode;
 }) {
   const [draft, setDraft] = useState(section.label);
+  const [armed, setArmed] = useState(false);
   useEffect(() => { setDraft(section.label); }, [section.label]);
 
   const commit = () => {
@@ -40,8 +54,24 @@ export default function GroupBand({
   const label = section.kind === 'ungrouped' && !groupsExist ? 'All projects' : section.label;
 
   return (
-    <section className={'home-band' + (section.kind === 'group' ? ' card-theme-' + section.colorIndex : '')}>
-      <div className="band-head">
+    <section
+      className={'home-band'
+        + (section.kind === 'group' ? ' card-theme-' + section.colorIndex : '')
+        + (drag?.dragging ? ' band-dragging' : '')
+        + (drag?.over ? ' band-over' : '')
+        + (receiving ? ' band-receiving' : '')}
+      draggable={armed}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; drag?.onStart(); }}
+      onDragEnd={() => { setArmed(false); drag?.onEnd(); }}>
+      <div className="band-head"
+        onDragOver={drag && ((e) => { e.preventDefault(); drag.onOver(); })}
+        onDrop={drag && ((e) => { e.preventDefault(); drag.onDrop(); })}>
+        {drag && (
+          <span className="band-grip" title="Drag to reorder the groups"
+            onMouseDown={() => setArmed(true)} onMouseUp={() => setArmed(false)}>
+            <IconGrip />
+          </span>
+        )}
         {section.kind === 'favorites' && <IconStar className="band-star" />}
         {section.kind === 'group' && <span className="band-dot" aria-hidden />}
 
