@@ -1147,22 +1147,34 @@ button { font-family: inherit; }
 .proj-fav:hover { background: rgba(230, 180, 0, 0.14); color: #E6B400; transform: scale(1.08); }
 .proj-fav.on svg { fill: #E6B400; }
 
-/* Per-card ⋯ menu (Rename / Delete) */
-.proj-menu {
-  position: absolute; top: 46px; right: 12px; z-index: 5; min-width: 156px;
+/* Popover menus on this page: a card's ⋯ and a band's. One look, one set of
+   rules — they sit side by side on screen and any drift between them shows. */
+.proj-menu, .band-menu {
+  position: absolute; z-index: 5; min-width: 186px; max-height: 62vh; overflow-y: auto;
   display: flex; flex-direction: column; gap: 2px; padding: 6px;
   background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-lg);
   animation: rise 140ms var(--ease) both;
 }
-.proj-menu button {
+.proj-menu { top: 46px; right: 12px; }
+.band-menu { top: 30px; left: 0; }
+.proj-menu button, .band-menu button {
   display: flex; align-items: center; gap: 9px; width: 100%; border: none; background: transparent;
   color: var(--ink); font-family: var(--sans); font-size: 13px; font-weight: 700; text-align: left;
   padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background 130ms var(--ease), color 130ms var(--ease);
 }
-.proj-menu button:hover { background: var(--canvas); }
-.proj-menu button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.proj-menu button.danger { color: var(--danger); }
-.proj-menu button.danger:hover { background: var(--danger-soft); }
+.proj-menu button:hover, .band-menu button:hover { background: var(--canvas); }
+.proj-menu button svg, .band-menu button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.proj-menu button.danger, .band-menu button.danger { color: var(--danger); }
+.proj-menu button.danger:hover, .band-menu button.danger:hover { background: var(--danger-soft); }
+.proj-menu button.on { background: var(--canvas); }
+.proj-menu-sep, .band-menu-sep { height: 1px; background: var(--border); margin: 5px 2px; flex-shrink: 0; }
+.proj-menu-head, .band-menu-head { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-mute); padding: 5px 10px 3px; }
+/* The group's colour, at menu scale — same swatch as the band's dot. */
+.proj-menu-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--p-bg, #E7E5DC); box-shadow: inset 0 0 0 2px var(--p-ink, rgba(26,26,24,0.22)); }
+.proj-menu-dot.none { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(26,26,24,0.22); }
+.proj-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-menu-tick { margin-left: auto; color: var(--ink-soft); }
+.band-colors { display: flex; gap: 6px; padding: 2px 8px 6px; }
 .del-name { font-family: var(--mono); background: var(--danger-soft); color: #B4282C; padding: 1px 7px; border-radius: 6px; }
 
 /* Inline rename on a project card */
@@ -1173,10 +1185,40 @@ button { font-family: inherit; }
   padding: 5px 9px; margin: 0 0 4px; outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* Section headings on the projects home */
-.home-section { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 8px 0 0; padding: 0 28px; }
-.home-section.muted { color: var(--ink-mute); margin-top: 22px; }
-.home-section-ic { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
+/* ---- Bands: Favorites, then each group, then whatever is ungrouped ----
+   The three read as siblings, so they share one heading shape. A group earns
+   the only two differences that are real: it wears its colour, and its name is
+   editable where it stands. */
+.home-band + .home-band { margin-top: 6px; }
+.home-band .home-grid { padding-bottom: 26px; }
+.band-head { display: flex; align-items: center; gap: 9px; padding: 20px 28px 0; }
+.band-title { font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 0; }
+.band-title.muted { color: var(--ink-mute); }
+.band-star { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; flex-shrink: 0; }
+.band-dot { width: 11px; height: 11px; border-radius: 4px; flex-shrink: 0; background: var(--p-bg); box-shadow: inset 0 0 0 2px var(--p-ink); }
+/* A heading you can type in: invisible until you reach for it. Its width comes
+   from the `size` attribute, so the box tracks the name instead of leaving a
+   highlighted gutter after a short one. */
+.band-name {
+  font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--p-ink, var(--ink-soft)); background: transparent; border: 1.5px solid transparent; border-radius: 8px;
+  padding: 3px 7px; margin-left: -7px; min-width: 60px; outline: none;
+  transition: background 130ms var(--ease), border-color 130ms var(--ease);
+}
+.band-name:hover { background: rgba(26, 26, 24, 0.05); }
+.band-name:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); text-transform: none; letter-spacing: 0; }
+.band-count { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+.band-tools { position: relative; }
+.band-menu-btn {
+  border: none; background: transparent; color: var(--ink-mute); width: 26px; height: 26px; border-radius: 8px;
+  cursor: pointer; display: grid; place-items: center; opacity: 0.55;
+  transition: opacity 140ms var(--ease), background 140ms var(--ease), color 140ms var(--ease);
+}
+.band-head:hover .band-menu-btn, .band-menu-btn[aria-expanded="true"] { opacity: 1; }
+.band-menu-btn:hover { background: rgba(26, 26, 24, 0.06); color: var(--ink); }
+.band-menu-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* An empty group is a promise, not a mistake — it spans the grid and says what to do. */
+.band-empty { grid-column: 1 / -1; }
 
 /* ---------- Auth ---------- */
 .auth-screen { min-height: 100%; display: grid; place-items: center; padding: 40px 20px; }
