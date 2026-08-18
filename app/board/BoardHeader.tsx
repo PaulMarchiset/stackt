@@ -4,7 +4,7 @@ import type { Project } from '@/lib/types';
 import type { ProjectIsland } from '@/lib/grouping';
 import { repoLabel, versionTheme } from '@/lib/util';
 import AccountMenu from '@/app/components/AccountMenu';
-import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconTimeline } from '@/app/components/icons';
+import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconSliders, IconTimeline } from '@/app/components/icons';
 import Logo from '../Logo';
 
 export type BoardView = 'board' | 'timeline';
@@ -45,18 +45,24 @@ function RepoButton({ project, onOpen }: { project: Project; onOpen: () => void 
 }
 
 export function Topbar({
-  islands, activeId, project, view, devMode, userEmail, userName, openCount,
-  onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo
+  islands, activeId, project, view, devMode, userEmail, userName, openCount, composer, composerOpen,
+  onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onComposer
 }: {
   islands: ProjectIsland[]; activeId: string | null; project: Project | null;
   view: BoardView; devMode: boolean; userEmail: string; userName: string;
   openCount: (projectId: string) => number;
+  /* The header's own "what goes here" panel. It hangs off the actions row
+     rather than off the tabs: the tab strip scrolls sideways, and a popover
+     anchored inside it would be clipped by that scroll. */
+  composer: React.ReactNode;
+  composerOpen: boolean;
   onSelectProject: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragOverTab: (overId: string) => void;
   onDropTab: () => void;
   onView: (v: BoardView) => void;
   onOpenRepo: () => void;
+  onComposer: () => void;
 }) {
   return (
     <header className="topbar">
@@ -86,6 +92,14 @@ export function Topbar({
         ))}
       </div>
       <div className="topbar-actions">
+        <div className="hdr-pick">
+          <button className={'icon-btn hdr-pick-btn' + (composerOpen ? ' on' : '')}
+            title="Choose what heads the board" aria-label="Choose what heads the board"
+            aria-haspopup="dialog" aria-expanded={composerOpen} onClick={onComposer}>
+            <IconSliders />
+          </button>
+          {composerOpen && <div className="hdr-pop" role="dialog" aria-label="Board header">{composer}</div>}
+        </div>
         <ViewToggle view={view} onChange={onView} />
         {project && devMode && <RepoButton project={project} onOpen={onOpenRepo} />}
         <AccountMenu userEmail={userEmail} userName={userName} />

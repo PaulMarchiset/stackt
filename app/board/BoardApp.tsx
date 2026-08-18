@@ -5,6 +5,7 @@ import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, 
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
 import { headerIslands } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
+import { useHeaderItems } from '@/lib/useHeaderItems';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
@@ -13,6 +14,7 @@ import Sheet from '@/app/components/Sheet';
 import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
 import NotifBell from '@/app/components/NotifBell';
+import HeaderComposer from '@/app/components/HeaderComposer';
 import { ConfirmDialog, PromptDialog } from '@/app/components/Dialog';
 import { IconPlus, IconRepo } from '@/app/components/icons';
 import CardEditor from './CardEditor';
@@ -37,14 +39,17 @@ type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: 
 export default function BoardApp({
   initialProjects, initialCards, initialVersions,
   groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
-  userEmail, userName = '', initialActiveId
+  userId, userEmail, userName = '', initialActiveId
 }: {
   initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
   groups?: ProjectGroup[]; headerItems?: HeaderItem[];
-  userEmail: string; userName?: string; initialActiveId?: string | null;
+  userId: string; userEmail: string; userName?: string; initialActiveId?: string | null;
 }) {
   const store = useBoardStore(initialProjects, initialCards, initialVersions);
   const { projects, cards, versions, saving, toast } = store;
+  /* What heads the board is an account setting the board can edit in place —
+     same hook, same composer as the settings page. */
+  const selection = useHeaderItems(userId, headerItems, store.showToast);
   const isMobile = useIsMobile();
   const [defaultDevMode] = useDevMode();
 
@@ -60,6 +65,7 @@ export default function BoardApp({
   const [justMoved, setJustMoved] = useState<string | null>(null);
   const [verPop, setVerPop] = useState<VersionPopAnchor | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
   const [sheet, setSheet] = useState<MobileSheet>(null);
@@ -97,8 +103,8 @@ export default function BoardApp({
   // Which projects head the board, and how they're segmented — an account
   // setting, resolved by one pure function (lib/grouping.ts).
   const islands = useMemo(
-    () => headerIslands(headerItems, projects, groups, activeId),
-    [headerItems, projects, groups, activeId]
+    () => headerIslands(selection.items, projects, groups, activeId),
+    [selection.items, projects, groups, activeId]
   );
   /* Which island each tab belongs to. Dragging reorders projects, it does not
      re-group them — so a drag that crosses an island boundary is refused rather
@@ -160,6 +166,19 @@ export default function BoardApp({
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [verPop, project, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Same dismissal as every other popover: click away, or press Escape.
+  useEffect(() => {
+    if (!composerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.hdr-pop, .hdr-pick-btn')) setComposerOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setComposerOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [composerOpen]);
+
   const header = isMobile ? (
     <MobileTopbar project={project} view={view} saving={saving}
       onOpenProjects={() => setSheet({ kind: 'project' })}
@@ -168,6 +187,9 @@ export default function BoardApp({
   ) : (
     <Topbar islands={islands} activeId={activeId} project={project} view={view} devMode={devMode}
       userEmail={userEmail} userName={userName} openCount={openCount}
+      composerOpen={composerOpen} onComposer={() => setComposerOpen((o) => !o)}
+      composer={<HeaderComposer items={selection.items} projects={projects} groups={groups}
+        onChange={selection.update} />}
       onSelectProject={selectProject}
       onDragStart={(id) => { dragProj.current = id; }}
       onDragOverTab={(overId) => {

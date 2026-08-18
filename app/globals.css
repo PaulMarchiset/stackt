@@ -143,6 +143,44 @@ button { font-family: inherit; }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
+/* ---------- Header composer ----------
+   The same block twice: hanging under the board's own header, and inline in
+   settings. It sits in the actions row rather than among the tabs because the
+   tab strip scrolls sideways and would clip a popover anchored inside it. */
+.hdr-pick { position: relative; }
+.hdr-pick-btn.on { background: rgba(26, 26, 24, 0.07); color: var(--ink); }
+.hdr-pop {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 40; width: 328px;
+  max-height: min(70vh, 540px); overflow-y: auto;
+  background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 12px;
+  animation: rise 140ms var(--ease) both;
+}
+.hc-head { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-mute); padding: 4px 2px 6px; }
+.hc-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.hc-row { display: flex; align-items: center; gap: 8px; background: #FBFAF6; border-radius: 10px; padding: 7px 8px 7px 10px; }
+.hc-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--p-bg, #E7E5DC); box-shadow: inset 0 0 0 2px var(--p-ink, rgba(26, 26, 24, 0.22)); }
+.hc-dot.plain { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(26, 26, 24, 0.22); }
+.hc-star { width: 13px; height: 13px; flex-shrink: 0; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
+.hc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; color: var(--ink); }
+.hc-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-mute); }
+.hc-btn { border: none; background: transparent; color: var(--ink-mute); width: 22px; height: 22px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
+.hc-btn:hover:not(:disabled) { background: rgba(26, 26, 24, 0.07); color: var(--ink); }
+.hc-btn:disabled { opacity: 0.28; cursor: default; }
+.hc-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hc-btn .up { transform: rotate(180deg); }
+.hc-btn.del:hover { background: var(--danger-soft); color: var(--danger); }
+.hc-empty { font-size: 12.5px; line-height: 1.5; color: var(--ink-mute); padding: 6px 2px; }
+.hc-add { display: flex; flex-wrap: wrap; gap: 6px; }
+.hc-chip {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--ink-soft);
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 9999px;
+  transition: border-color 130ms var(--ease), color 130ms var(--ease);
+}
+.hc-chip:hover { border-color: var(--ink-mute); color: var(--ink); }
+.hc-chip-ic { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.hc-note { font-size: 11.5px; line-height: 1.5; color: var(--ink-mute); margin: 12px 2px 0; }
+
 .btn {
   display: inline-flex; align-items: center; gap: 6px; border: none;
   background: var(--surface); color: var(--ink); text-decoration: none;
@@ -1001,68 +1039,6 @@ button { font-family: inherit; }
 .set-preset:hover { background: #E9E7DE; color: var(--ink); }
 .set-preset.on { background: var(--ink); color: #fff; }
 
-/* ---- Board header: mode picker, live sample, groups ---- */
-.set-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 9px; }
-.set-mode {
-  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
-  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: var(--radius-xs); padding: 12px 14px;
-  transition: border-color 140ms var(--ease), background 140ms var(--ease), box-shadow 140ms var(--ease);
-}
-.set-mode:hover { border-color: var(--ink-mute); }
-.set-mode.on { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
-.set-mode-name { font-family: var(--display); font-size: 14px; font-weight: 800; color: var(--ink); }
-.set-mode-hint { font-size: 12px; line-height: 1.4; color: var(--ink-mute); }
-
-/* The sample is rendered by headerIslands(), the same function the board uses —
-   so what you see here cannot drift from what you will get. */
-.set-sample {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 16px;
-  background: var(--canvas); border-radius: var(--radius-xs); padding: 12px 14px; overflow-x: auto;
-}
-.set-sample-isle { display: flex; align-items: center; gap: 6px; }
-.set-sample-sep { width: 1px; height: 18px; margin: 0 5px; background: rgba(26,26,24,0.16); }
-.set-sample-label {
-  font-family: var(--display); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
-  background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft)); padding: 3px 8px; border-radius: 6px; white-space: nowrap;
-}
-.set-sample-tab {
-  font-size: 12px; font-weight: 700; color: var(--ink-soft); background: var(--surface);
-  box-shadow: var(--shadow-sm); padding: 5px 12px; border-radius: 9999px; white-space: nowrap;
-}
-
-/* Chosen mode: the projects, as chips you click. Off is a quiet outline, on is
-   filled with a tick — the state is the fill, not a control beside the name. */
-.set-pick { display: flex; flex-wrap: wrap; gap: 8px; }
-.set-pickopt {
-  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
-  border: 1.5px solid var(--border); background: #FBFAF6; color: var(--ink-soft);
-  font-family: var(--sans); font-size: 13px; font-weight: 600;
-  padding: 8px 15px; border-radius: 9999px;
-  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
-}
-.set-pickopt:hover { border-color: var(--ink-mute); color: var(--ink); }
-.set-pickopt.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.set-pickopt:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-.set-pickopt svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-
-.set-grouplist { display: flex; flex-direction: column; gap: 8px; }
-.set-group { display: flex; align-items: center; gap: 11px; background: #FBFAF6; border-radius: var(--radius-xs); padding: 9px 11px; }
-.set-group .set-swatch { width: 12px; height: 12px; border-radius: 4px; }
-.set-group-name { flex: 1; min-width: 0; background: var(--surface); }
-.set-group-colors { display: flex; gap: 5px; flex-shrink: 0; }
-.set-group-colors .color-opt { width: 18px; height: 18px; border-width: 2px; }
-
-/* Assigning a project to a group: real buttons, not a native <select> — the
-   colours are the point, and no OS lets you style an <option>. */
-.set-grouppick { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
-.set-gopt {
-  border: 2px solid transparent; cursor: pointer; background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
-  font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 9999px;
-  transition: border-color 130ms var(--ease), transform 100ms var(--ease);
-}
-.set-gopt:hover { transform: translateY(-1px); }
-.set-gopt.on { border-color: var(--ink); }
-
 /* Horizon stepper */
 .set-inline { display: flex; align-items: center; }
 .set-stepper { display: inline-flex; align-items: stretch; background: #FBFAF6; border: 1.5px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; }
@@ -1620,10 +1596,6 @@ button { font-family: inherit; }
   .set-day { width: 36px; height: 36px; }
   .set-day-presets { width: 100%; margin: 4px 0 0; }
   .set-preset { flex: 1; }
-  .set-modes { grid-template-columns: 1fr; }
-  .set-group { flex-wrap: wrap; }
-  .set-group-name { flex: 1 1 100%; order: -1; }
-  .set-grouppick { justify-content: flex-start; width: 100%; }
   .set-proj { flex-wrap: wrap; }
 
   /* Import: one column, the preview under the paste area. */

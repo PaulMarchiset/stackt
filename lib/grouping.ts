@@ -1,4 +1,4 @@
-import type { HeaderItem, HeaderMode, Project, ProjectGroup } from './types';
+import type { HeaderItem, Project, ProjectGroup } from './types';
 import { versionColor } from './util';
 
 /**
@@ -172,16 +172,6 @@ export function moveItem(items: HeaderItem[], from: number, to: number): HeaderI
   return next;
 }
 
-/**
- * The three exclusive modes, translated into a selection. Mirrors the backfill
- * in migration 0007 so a client that still speaks modes writes the same list
- * the database would have. Goes away with the column.
- */
-export function itemsFromMode(mode: HeaderMode, projects: Project[], groups: ProjectGroup[]): HeaderItem[] {
-  if (mode === 'custom') return projects.filter((p) => p.pinned).map((p) => ({ kind: 'project', id: p.id }));
-  if (mode === 'groups') return sortGroups(groups).map((g) => ({ kind: 'group', id: g.id }));
-  return [{ kind: 'favorites' }];
-}
 
 /* ============================================================
    The projects page

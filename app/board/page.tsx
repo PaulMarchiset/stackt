@@ -38,6 +38,7 @@ export default async function BoardPage({
       initialVersions={(versions ?? []) as Version[]}
       groups={(groups ?? []) as ProjectGroup[]}
       headerItems={items.length ? items : DEFAULT_USER_PREFS.header_items}
+      userId={user.id}
       userEmail={user.email ?? ''}
       userName={(user.user_metadata?.username as string) ?? ''}
       initialActiveId={searchParams.p ?? null}

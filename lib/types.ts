@@ -82,9 +82,6 @@ export const HEADER_ITEM_KINDS = ['favorites', 'group', 'project'] as const;
 /* No setup required: a new account heads its board with its favorites. */
 export const DEFAULT_HEADER_ITEMS: HeaderItem[] = [{ kind: 'favorites' }];
 
-/* The three exclusive modes header_items replaced. Read only by the transition
-   helper in lib/grouping.ts; migration 0008 drops the column. */
-export type HeaderMode = 'favorites' | 'custom' | 'groups';
 
 /* Account-wide settings. A missing row means these defaults. */
 export interface UserPrefs {
