@@ -27,9 +27,13 @@ export default async function BoardPage({
     supabase.from('user_prefs').select('header_items').eq('user_id', user.id).maybeSingle()
   ]);
 
-  /* An account with no row, an empty list, or a list whose every entry points at
-     something deleted all mean the same thing: head the board the default way. */
-  const items: HeaderItem[] = parseHeaderItems(prefs?.header_items);
+  /* No row means "never chose anything" — the defaults. An existing row with an
+     empty list means the opposite: you took everything out on purpose, and the
+     header falls back to showing every project (see headerIslands, rule 1).
+     Collapsing the two would put Favorites back after a reload. */
+  const items: HeaderItem[] = prefs
+    ? parseHeaderItems(prefs.header_items)
+    : DEFAULT_USER_PREFS.header_items;
 
   return (
     <BoardApp
@@ -37,7 +41,7 @@ export default async function BoardPage({
       initialCards={(cards ?? []) as Card[]}
       initialVersions={(versions ?? []) as Version[]}
       groups={(groups ?? []) as ProjectGroup[]}
-      headerItems={items.length ? items : DEFAULT_USER_PREFS.header_items}
+      headerItems={items}
       userId={user.id}
       userEmail={user.email ?? ''}
       userName={(user.user_metadata?.username as string) ?? ''}

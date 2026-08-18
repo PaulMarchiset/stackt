@@ -16,7 +16,7 @@ import { IconDots, IconGrip, IconStar, IconTrash } from '@/app/components/icons'
  * Only a group can be reordered, so only a group's heading grows a grip.
  */
 export default function GroupBand({
-  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, drag, receiving, children
+  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, drag, head, receiving, children
 }: {
   section: ProjectSection;
   groupsExist: boolean;
@@ -25,15 +25,20 @@ export default function GroupBand({
   onRename: (name: string) => void;
   onRecolor: (index: number) => void;
   onDelete: () => void;
-  /* Desktop only, and groups only — the two implicit bands have no order of
-     their own: Favorites always leads, Ungrouped always trails. */
+  /* Picking the band up. Desktop only, and groups only — the two implicit
+     bands have no order of their own: Favorites always leads, Ungrouped
+     always trails. */
   drag?: {
     dragging: boolean;
     over: boolean;
     onStart: () => void;
+    onEnd: () => void;
+  };
+  /* The heading as a drop zone. Every band has one, whatever is in flight —
+     the page decides what a drop there means. */
+  head?: {
     onOver: () => void;
     onDrop: () => void;
-    onEnd: () => void;
   };
   /* A dragged project would land in this band. */
   receiving?: boolean;
@@ -61,11 +66,17 @@ export default function GroupBand({
         + (drag?.over ? ' band-over' : '')
         + (receiving ? ' band-receiving' : '')}
       draggable={armed}
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; drag?.onStart(); }}
-      onDragEnd={() => { setArmed(false); drag?.onEnd(); }}>
+      /* A card inside starts its own drag, and that event bubbles up to here.
+         Only an event whose source *is* this band is this band being pulled. */
+      onDragStart={(e) => {
+        if (e.target !== e.currentTarget) return;
+        e.dataTransfer.effectAllowed = 'move';
+        drag?.onStart();
+      }}
+      onDragEnd={(e) => { if (e.target !== e.currentTarget) return; setArmed(false); drag?.onEnd(); }}>
       <div className="band-head"
-        onDragOver={drag && ((e) => { e.preventDefault(); drag.onOver(); })}
-        onDrop={drag && ((e) => { e.preventDefault(); drag.onDrop(); })}>
+        onDragOver={head && ((e) => { e.preventDefault(); head.onOver(); })}
+        onDrop={head && ((e) => { e.preventDefault(); head.onDrop(); })}>
         {drag && (
           <span className="band-grip" title="Drag to reorder the groups"
             onMouseDown={() => setArmed(true)} onMouseUp={() => setArmed(false)}>

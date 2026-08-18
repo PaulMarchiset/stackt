@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { parseHeaderItems } from '@/lib/grouping';
 import { useHeaderItems } from '@/lib/useHeaderItems';
-import type { Project, ProjectGroup } from '@/lib/types';
+import { DEFAULT_HEADER_ITEMS, type Project, type ProjectGroup } from '@/lib/types';
 import HeaderComposer from '@/app/components/HeaderComposer';
 
 /**
@@ -43,7 +43,8 @@ export default function HeaderProjects({
       if (!alive) return;
       setProjects((projRes.data as Project[]) || []);
       setGroups((grpRes.data as ProjectGroup[]) || []);
-      setItems(parseHeaderItems(prefRes.data?.header_items));
+      // Same rule as the board: no row at all is the default, an empty list is a choice.
+      setItems(prefRes.data ? parseHeaderItems(prefRes.data.header_items) : DEFAULT_HEADER_ITEMS);
       setLoading(false);
     })();
     return () => { alive = false; };

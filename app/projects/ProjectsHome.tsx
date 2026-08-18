@@ -255,6 +255,17 @@ export default function ProjectsHome({
       ) : bands.map((section) => {
         const g = section.group;
         const others = section.projects.filter((p) => p.id !== dnd.draggingProject);
+        /* The band as a drop zone, heading and grid alike: whatever is in
+           flight, landing anywhere on a band means "put it here" — a group
+           takes this band's place, a project joins it at the end. A card
+           hovered inside the grid speaks for itself and says where exactly. */
+        const zone = isMobile ? undefined : {
+          onOver: () => {
+            if (dnd.draggingProject) dnd.overProject(section.key, others.length);
+            else if (g) dnd.overGroup(g.id);
+          },
+          onDrop: () => (dnd.drag?.kind === 'group' ? dropGroup() : dropProject())
+        };
         return (
           <GroupBand key={section.key} section={section} groupsExist={groups.length > 0}
             menuOpen={menu?.kind === 'band' && menu.id === section.key}
@@ -267,16 +278,12 @@ export default function ProjectsHome({
               dragging: dnd.draggingGroup === g.id,
               over: dnd.groupDropKey === g.id && dnd.draggingGroup !== g.id,
               onStart: () => dnd.startGroup(g.id),
-              onOver: () => dnd.overGroup(g.id),
-              onDrop: dropGroup,
               onEnd: dnd.end
-            }}>
-            {/* The grid is the band's own drop zone: anything not caught by a
-                card lands at the end, which is also what an empty band means. */}
+            }}
+            head={zone}>
             <div className="home-grid"
-              onDragOver={isMobile || !dnd.draggingProject ? undefined
-                : (e) => { e.preventDefault(); dnd.overProject(section.key, others.length); }}
-              onDrop={isMobile ? undefined : (e) => { e.preventDefault(); dropProject(); }}>
+              onDragOver={zone && ((e) => { e.preventDefault(); zone.onOver(); })}
+              onDrop={zone && ((e) => { e.preventDefault(); zone.onDrop(); })}>
               {section.projects.map((p) => card(p, section, others))}
               {section.projects.length === 0 && (
                 <div className="empty-hint band-empty">
