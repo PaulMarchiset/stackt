@@ -139,7 +139,25 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
 .isle-more {
   font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0;
   background: rgba(255, 255, 255, 0.6); padding: 1px 5px; border-radius: 5px;
+  /* Lands as the run finishes closing, so the count reads as what the tabs
+     turned into rather than as a second, unrelated thing appearing. */
+  animation: countIn 200ms var(--ease) 140ms both;
 }
+@keyframes countIn { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .isle-more { animation: none; } }
+
+/* A tab's slot. Folding animates the *track* from the tab's own width to
+   nothing (1fr → 0fr), which is the one way to reach a real content width
+   without hard-coding one; the inner span is what does the clipping, and the
+   negative margin swallows the island's gap as the tab goes, so a shut run
+   leaves no ghost spacing behind. */
+.tab-slot {
+  display: grid; grid-template-columns: 1fr; flex-shrink: 0;
+  transition: grid-template-columns 260ms var(--ease), opacity 170ms var(--ease), margin-left 260ms var(--ease);
+}
+.tab-slot-in { min-width: 0; overflow: hidden; }
+.tab-slot.tucked { grid-template-columns: 0fr; opacity: 0; margin-left: -6px; }
+@media (prefers-reduced-motion: reduce) { .tab-slot { transition: none; } }
 
 .tab {
   flex-shrink: 0; border: none; background: transparent; color: var(--ink-soft);

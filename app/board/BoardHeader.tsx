@@ -82,8 +82,8 @@ export function Topbar({
           const folded = !!isle.groupId && foldedGroups.includes(isle.groupId);
           /* Folded still shows the open board: the rule that you can always see
              where you are outranks the one that says this run is shut. */
-          const tabs = folded ? isle.projects.filter((p) => p.id === activeId) : isle.projects;
-          const hidden = isle.projects.length - tabs.length;
+          const tucked = (id: string) => folded && id !== activeId;
+          const hidden = isle.projects.filter((p) => tucked(p.id)).length;
           return (
             <div key={isle.key}
               className={'proj-isle card-theme-' + (isle.colorIndex ?? versionTheme(isle.label ?? ''))}>
@@ -96,17 +96,28 @@ export function Topbar({
                   {hidden > 0 && <span className="isle-more">{hidden}</span>}
                 </button>
               ) : <span className="isle-label">{isle.label}</span>)}
-              {tabs.map((p) => (
-                <button key={p.id} className={'tab' + (p.id === activeId ? ' active' : '')}
-                  draggable
-                  onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
-                  onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
-                  onDrop={(e) => { e.preventDefault(); onDropTab(); }}
-                  onDragEnd={onDropTab}
-                  onClick={() => onSelectProject(p.id)}>
-                  {p.name || 'Untitled'}
-                  <span className="count">{openCount(p.id)}</span>
-                </button>
+              {/* Every tab stays mounted, folded or not — a tab removed from
+                  the page cannot animate its way out. The slot is what closes,
+                  and it closes onto the tab's own width rather than a guessed
+                  one (grid 1fr → 0fr), so the run zips shut at any length.
+                  A shut tab is taken out of the tab order and hidden from
+                  assistive tech: still there, no longer reachable. */}
+              {isle.projects.map((p) => (
+                <span key={p.id} className={'tab-slot' + (tucked(p.id) ? ' tucked' : '')}
+                  aria-hidden={tucked(p.id)}>
+                  <span className="tab-slot-in">
+                    <button className={'tab' + (p.id === activeId ? ' active' : '')}
+                      draggable tabIndex={tucked(p.id) ? -1 : undefined}
+                      onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
+                      onDrop={(e) => { e.preventDefault(); onDropTab(); }}
+                      onDragEnd={onDropTab}
+                      onClick={() => onSelectProject(p.id)}>
+                      {p.name || 'Untitled'}
+                      <span className="count">{openCount(p.id)}</span>
+                    </button>
+                  </span>
+                </span>
               ))}
             </div>
           );
