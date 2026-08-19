@@ -18,10 +18,10 @@ const keyOf = (item: HeaderItem) => (item.kind === 'favorites' ? 'favorites' : i
  * them. The same component runs in the board's own header and in settings, so
  * there is one way to do this rather than two that drift.
  *
- * Each entry opens to show the projects it will actually contribute, taken
- * from resolveHeader() — the very pass the header renders from. So an entry
- * whose projects were already claimed by an earlier one says so, instead of
- * promising tabs that will never appear.
+ * The count beside each entry is what it will *actually* contribute, taken
+ * from resolveHeader() — the very pass the header renders from — so an entry
+ * whose projects an earlier one already claimed reads 0 rather than promising
+ * tabs that will never appear.
  *
  * Order can be dragged or nudged with the arrows. Both, deliberately: dragging
  * is quicker, and the arrows are the only version of it that a keyboard can
@@ -35,13 +35,9 @@ export default function HeaderComposer({
   groups: ProjectGroup[];
   onChange: (next: HeaderItem[]) => void;
 }) {
-  const [open, setOpen] = useState<string[]>([]);
   const [drag, setDrag] = useState<{ from: number; over: number; below: boolean } | null>(null);
 
   const entries = resolveHeader(items, projects, groups);
-
-  const toggle = (key: string) =>
-    setOpen((o) => (o.includes(key) ? o.filter((k) => k !== key) : [...o, key]));
 
   /* The hovered row and which half of it names a gap in the *current* list;
      moveItem() splices the entry out before putting it back, so an insertion
@@ -75,7 +71,6 @@ export default function HeaderComposer({
         {entries.map((entry, i) => {
           if (entry.missing) return null;   // points at something deleted — never drawn
           const key = keyOf(entry.item);
-          const expanded = open.includes(key);
           const star = entry.item.kind === 'favorites';
           return (
             <li className={'hc-item' + (drag?.from === i ? ' dragging' : '')
@@ -86,13 +81,10 @@ export default function HeaderComposer({
                 onDragOver={(below) => setDrag((d) => (!d || (d.over === i && d.below === below) ? d : { ...d, over: i, below }))}
                 onDrop={drop}
                 onDragEnd={() => setDrag(null)}>
-                <button className="hc-toggle" aria-expanded={expanded} onClick={() => toggle(key)}>
-                  <IconChevronDown className={'hc-caret' + (expanded ? ' open' : '')} />
-                  {star ? <IconStar className="hc-star" />
-                    : <span className={'hc-dot' + (entry.colorIndex === null ? ' plain' : '')} />}
-                  <span className="hc-label">{entry.title}</span>
-                  <span className="hc-count">{entry.projects.length}</span>
-                </button>
+                {star ? <IconStar className="hc-star" />
+                  : <span className={'hc-dot' + (entry.colorIndex === null ? ' plain' : '')} />}
+                <span className="hc-label">{entry.title}</span>
+                <span className="hc-count">{entry.projects.length}</span>
                 <button className="hc-btn" title="Move earlier" aria-label="Move earlier" disabled={i === 0}
                   onClick={() => onChange(moveItem(items, i, i - 1))}>
                   <IconChevronDown className="up" />
@@ -107,17 +99,6 @@ export default function HeaderComposer({
                 </button>
               </HeaderRow>
 
-              {expanded && (
-                <div className={'hc-sub' + (entry.colorIndex !== null ? ' card-theme-' + entry.colorIndex : '')}>
-                  {entry.projects.length > 0
-                    ? entry.projects.map((p) => <span className="hc-sub-tab" key={p.id}>{p.name || 'Untitled'}</span>)
-                    : <span className="hc-sub-note">
-                      {entry.item.kind === 'group' ? 'This group is empty, so it draws nothing yet.'
-                        : entry.item.kind === 'favorites' ? 'Nothing starred, or an entry above already shows it all.'
-                          : 'An entry above already shows this project.'}
-                    </span>}
-                </div>
-              )}
             </li>
           );
         })}

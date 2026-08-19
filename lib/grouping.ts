@@ -39,6 +39,10 @@ export interface ProjectIsland {
   key: string;
   label: string | null;
   colorIndex: number | null;
+  /* The group this run came from, when it came from one. `key` changes with the
+     entry's position; this doesn't, which is what a preference about the island
+     (whether it is folded) has to hang on. */
+  groupId: string | null;
   projects: Project[];
 }
 
@@ -71,7 +75,7 @@ export function headerIslands(
 }
 
 const all = (projects: Project[]): ProjectIsland =>
-  ({ key: 'all', label: null, colorIndex: null, projects });
+  ({ key: 'all', label: null, colorIndex: null, groupId: null, projects });
 
 /**
  * What one entry of the selection actually contributes, after rule 3 has taken
@@ -150,7 +154,8 @@ function coalesce(entries: HeaderEntry[]): ProjectIsland[] {
     }
     out.push({
       key: 'i' + i + ':' + (e.item.kind === 'favorites' ? 'favorites' : e.item.id),
-      label: e.label, colorIndex: e.colorIndex, projects: e.projects
+      label: e.label, colorIndex: e.colorIndex, projects: e.projects,
+      groupId: e.item.kind === 'group' ? e.item.id : null
     });
     lastKind = e.item.kind;
   });
@@ -162,7 +167,7 @@ function withActive(islands: ProjectIsland[], projects: Project[], activeId: str
   if (!activeId || islands.some((i) => i.projects.some((p) => p.id === activeId))) return islands;
   const active = projects.find((p) => p.id === activeId);
   if (!active) return islands;
-  return [...islands, { key: 'active', label: null, colorIndex: null, projects: [active] }];
+  return [...islands, { key: 'active', label: null, colorIndex: null, groupId: null, projects: [active] }];
 }
 
 /* ============================================================

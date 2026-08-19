@@ -6,6 +6,7 @@ import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, tod
 import { headerIslands, projectSections } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
 import { useHeaderItems } from '@/lib/useHeaderItems';
+import { useFoldedGroups } from '@/lib/useFoldedGroups';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
@@ -50,6 +51,9 @@ export default function BoardApp({
   /* What heads the board is an account setting the board can edit in place —
      same hook, same composer as the settings page. */
   const selection = useHeaderItems(userId, headerItems, store.showToast);
+  /* Which group runs are folded shut — per device, not per account: it is about
+     how much room this screen has. */
+  const [foldedGroups, foldGroup] = useFoldedGroups();
   const isMobile = useIsMobile();
   const [defaultDevMode] = useDevMode();
 
@@ -188,6 +192,7 @@ export default function BoardApp({
     <Topbar islands={islands} activeId={activeId} project={project} view={view} devMode={devMode}
       userEmail={userEmail} userName={userName} openCount={openCount}
       composerOpen={composerOpen} onComposer={() => setComposerOpen((o) => !o)}
+      foldedGroups={foldedGroups} onFoldGroup={foldGroup}
       composer={<HeaderComposer items={selection.items} projects={projects} groups={groups}
         onChange={selection.update} />}
       onSelectProject={selectProject}

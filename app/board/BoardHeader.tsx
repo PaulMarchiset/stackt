@@ -46,11 +46,13 @@ function RepoButton({ project, onOpen }: { project: Project; onOpen: () => void 
 
 export function Topbar({
   islands, activeId, project, view, devMode, userEmail, userName, openCount, composer, composerOpen,
-  onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onComposer
+  foldedGroups, onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onComposer, onFoldGroup
 }: {
   islands: ProjectIsland[]; activeId: string | null; project: Project | null;
   view: BoardView; devMode: boolean; userEmail: string; userName: string;
   openCount: (projectId: string) => number;
+  /* Group ids whose run is folded shut. */
+  foldedGroups: string[];
   /* The header's own "what goes here" panel. It hangs off the actions row
      rather than off the tabs: the tab strip scrolls sideways, and a popover
      anchored inside it would be clipped by that scroll. */
@@ -63,6 +65,7 @@ export function Topbar({
   onView: (v: BoardView) => void;
   onOpenRepo: () => void;
   onComposer: () => void;
+  onFoldGroup: (groupId: string) => void;
 }) {
   return (
     <header className="topbar">
@@ -70,26 +73,44 @@ export function Topbar({
         <Logo height={22} className="brand-logo-full" />
       </a>
       {/* One run of tabs per island. A labelled island wears its group name; the
-          divider is what makes two runs read as two places rather than one list. */}
+          divider is what makes two runs read as two places rather than one list.
+          Clicking the name folds the run shut — the header is the narrowest
+          thing on screen, and a group you aren't working in today can wait
+          behind its own label. */}
       <div className="projects" role="tablist">
-        {islands.map((isle, i) => (
-          <div key={isle.key} className={'proj-isle card-theme-' + (isle.colorIndex ?? versionTheme(isle.label ?? ''))}>
-            {i > 0 && <span className="isle-sep" aria-hidden />}
-            {isle.label && <span className="isle-label">{isle.label}</span>}
-            {isle.projects.map((p) => (
-              <button key={p.id} className={'tab' + (p.id === activeId ? ' active' : '')}
-                draggable
-                onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
-                onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
-                onDrop={(e) => { e.preventDefault(); onDropTab(); }}
-                onDragEnd={onDropTab}
-                onClick={() => onSelectProject(p.id)}>
-                {p.name || 'Untitled'}
-                <span className="count">{openCount(p.id)}</span>
-              </button>
-            ))}
-          </div>
-        ))}
+        {islands.map((isle, i) => {
+          const folded = !!isle.groupId && foldedGroups.includes(isle.groupId);
+          /* Folded still shows the open board: the rule that you can always see
+             where you are outranks the one that says this run is shut. */
+          const tabs = folded ? isle.projects.filter((p) => p.id === activeId) : isle.projects;
+          const hidden = isle.projects.length - tabs.length;
+          return (
+            <div key={isle.key}
+              className={'proj-isle card-theme-' + (isle.colorIndex ?? versionTheme(isle.label ?? ''))}>
+              {i > 0 && <span className="isle-sep" aria-hidden />}
+              {isle.label && (isle.groupId ? (
+                <button className="isle-label" aria-expanded={!folded}
+                  title={folded ? 'Show this group' : 'Fold this group'}
+                  onClick={() => onFoldGroup(isle.groupId as string)}>
+                  {isle.label}
+                  {hidden > 0 && <span className="isle-more">{hidden}</span>}
+                </button>
+              ) : <span className="isle-label">{isle.label}</span>)}
+              {tabs.map((p) => (
+                <button key={p.id} className={'tab' + (p.id === activeId ? ' active' : '')}
+                  draggable
+                  onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
+                  onDrop={(e) => { e.preventDefault(); onDropTab(); }}
+                  onDragEnd={onDropTab}
+                  onClick={() => onSelectProject(p.id)}>
+                  {p.name || 'Untitled'}
+                  <span className="count">{openCount(p.id)}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })}
       </div>
       <div className="topbar-actions">
         <div className="hdr-pick">
