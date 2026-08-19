@@ -57,8 +57,16 @@ export function useDragSort() {
  * Which side of an element the pointer is on. A card is inserted before or
  * after the one you are hovering, and half its width is the fairest boundary —
  * it makes the two halves of every card mean the two gaps around it.
+ *
+ * The vertical twin serves lists that stack rather than flow: same rule, other
+ * axis.
  */
 export function isAfterMidpoint(e: { clientX: number }, el: HTMLElement): boolean {
   const box = el.getBoundingClientRect();
   return e.clientX > box.left + box.width / 2;
+}
+
+export function isBelowMidpoint(e: { clientY: number }, el: HTMLElement): boolean {
+  const box = el.getBoundingClientRect();
+  return e.clientY > box.top + box.height / 2;
 }

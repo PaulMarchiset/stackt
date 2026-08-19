@@ -1,26 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import type { HeaderItem, Project, ProjectGroup } from '@/lib/types';
-import { addItem, groupColor, hasItem, moveItem, removeItem, sortGroups } from '@/lib/grouping';
-import { IconChevronDown, IconClose, IconPlus, IconStar } from '@/app/components/icons';
+import { addItem, groupColor, hasItem, moveItem, removeItem, resolveHeader, sortGroups } from '@/lib/grouping';
+import { isBelowMidpoint } from '@/lib/useDragSort';
+import { IconChevronDown, IconClose, IconGrip, IconPlus, IconStar } from '@/app/components/icons';
 
-/* What one entry stands for, resolved against the data. `null` means the entry
-   points at something that no longer exists: it is skipped rather than drawn,
-   which is the same thing the header itself does with it. */
-type Described = { label: string; count: number; colorIndex: number | null; star?: boolean } | null;
-
-function describe(item: HeaderItem, projects: Project[], groups: ProjectGroup[]): Described {
-  if (item.kind === 'favorites') {
-    return { label: 'Favorites', count: projects.filter((p) => p.favorite).length, colorIndex: null, star: true };
-  }
-  if (item.kind === 'group') {
-    const g = groups.find((x) => x.id === item.id);
-    if (!g) return null;
-    return { label: g.name, count: projects.filter((p) => p.group_id === g.id).length, colorIndex: groupColor(g) };
-  }
-  const p = projects.find((x) => x.id === item.id);
-  return p ? { label: p.name || 'Untitled', count: 1, colorIndex: null } : null;
-}
+/* One key per entry, stable across reordering — which is what the expanded set
+   and React's reconciliation both need. */
+const keyOf = (item: HeaderItem) => (item.kind === 'favorites' ? 'favorites' : item.kind + ':' + item.id);
 
 /**
  * Choose what heads the board.
@@ -30,10 +18,14 @@ function describe(item: HeaderItem, projects: Project[], groups: ProjectGroup[])
  * them. The same component runs in the board's own header and in settings, so
  * there is one way to do this rather than two that drift.
  *
- * Order is changed with buttons rather than by dragging: this list is short and
- * often lives inside a popover, where a drag is both fiddly and unreachable
- * from a keyboard. The page it organises (/projects) is where dragging earns
- * its keep.
+ * Each entry opens to show the projects it will actually contribute, taken
+ * from resolveHeader() — the very pass the header renders from. So an entry
+ * whose projects were already claimed by an earlier one says so, instead of
+ * promising tabs that will never appear.
+ *
+ * Order can be dragged or nudged with the arrows. Both, deliberately: dragging
+ * is quicker, and the arrows are the only version of it that a keyboard can
+ * reach.
  */
 export default function HeaderComposer({
   items, projects, groups, onChange
@@ -43,6 +35,24 @@ export default function HeaderComposer({
   groups: ProjectGroup[];
   onChange: (next: HeaderItem[]) => void;
 }) {
+  const [open, setOpen] = useState<string[]>([]);
+  const [drag, setDrag] = useState<{ from: number; over: number; below: boolean } | null>(null);
+
+  const entries = resolveHeader(items, projects, groups);
+
+  const toggle = (key: string) =>
+    setOpen((o) => (o.includes(key) ? o.filter((k) => k !== key) : [...o, key]));
+
+  /* The hovered row and which half of it names a gap in the *current* list;
+     moveItem() splices the entry out before putting it back, so an insertion
+     point past the one that left has to come back a notch. */
+  function drop() {
+    if (!drag) return;
+    const target = drag.over + (drag.below ? 1 : 0);
+    onChange(moveItem(items, drag.from, target > drag.from ? target - 1 : target));
+    setDrag(null);
+  }
+
   const available: { key: string; item: HeaderItem; label: string; colorIndex: number | null; star?: boolean }[] = [];
   if (!hasItem(items, { kind: 'favorites' })) {
     available.push({ key: 'favorites', item: { kind: 'favorites' }, label: 'Favorites', colorIndex: null, star: true });
@@ -62,31 +72,58 @@ export default function HeaderComposer({
     <div className="hc">
       <div className="hc-head">In your header</div>
       <ul className="hc-list">
-        {items.map((item, i) => {
-          const d = describe(item, projects, groups);
-          if (!d) return null;
+        {entries.map((entry, i) => {
+          if (entry.missing) return null;   // points at something deleted — never drawn
+          const key = keyOf(entry.item);
+          const expanded = open.includes(key);
+          const star = entry.item.kind === 'favorites';
           return (
-            <li className={'hc-row' + (d.colorIndex !== null ? ' card-theme-' + d.colorIndex : '')}
-              key={item.kind + ':' + (item.kind === 'favorites' ? '' : item.id)}>
-              {d.star ? <IconStar className="hc-star" /> : <span className={'hc-dot' + (d.colorIndex === null ? ' plain' : '')} />}
-              <span className="hc-label">{d.label}</span>
-              <span className="hc-count">{d.count}</span>
-              <button className="hc-btn" title="Move earlier" aria-label="Move earlier" disabled={i === 0}
-                onClick={() => onChange(moveItem(items, i, i - 1))}>
-                <IconChevronDown className="up" />
-              </button>
-              <button className="hc-btn" title="Move later" aria-label="Move later" disabled={i === items.length - 1}
-                onClick={() => onChange(moveItem(items, i, i + 1))}>
-                <IconChevronDown />
-              </button>
-              <button className="hc-btn del" title="Remove from the header" aria-label="Remove from the header"
-                onClick={() => onChange(removeItem(items, item))}>
-                <IconClose />
-              </button>
+            <li className={'hc-item' + (drag?.from === i ? ' dragging' : '')
+              + (drag && drag.over === i && drag.from !== i ? (drag.below ? ' drop-below' : ' drop-above') : '')}
+              key={key}>
+              <HeaderRow
+                onDragStart={() => setDrag({ from: i, over: i, below: false })}
+                onDragOver={(below) => setDrag((d) => (!d || (d.over === i && d.below === below) ? d : { ...d, over: i, below }))}
+                onDrop={drop}
+                onDragEnd={() => setDrag(null)}>
+                <button className="hc-toggle" aria-expanded={expanded} onClick={() => toggle(key)}>
+                  <IconChevronDown className={'hc-caret' + (expanded ? ' open' : '')} />
+                  {star ? <IconStar className="hc-star" />
+                    : <span className={'hc-dot' + (entry.colorIndex === null ? ' plain' : '')} />}
+                  <span className="hc-label">{entry.title}</span>
+                  <span className="hc-count">{entry.projects.length}</span>
+                </button>
+                <button className="hc-btn" title="Move earlier" aria-label="Move earlier" disabled={i === 0}
+                  onClick={() => onChange(moveItem(items, i, i - 1))}>
+                  <IconChevronDown className="up" />
+                </button>
+                <button className="hc-btn" title="Move later" aria-label="Move later" disabled={i === items.length - 1}
+                  onClick={() => onChange(moveItem(items, i, i + 1))}>
+                  <IconChevronDown />
+                </button>
+                <button className="hc-btn del" title="Remove from the header" aria-label="Remove from the header"
+                  onClick={() => onChange(removeItem(items, entry.item))}>
+                  <IconClose />
+                </button>
+              </HeaderRow>
+
+              {expanded && (
+                <div className={'hc-sub' + (entry.colorIndex !== null ? ' card-theme-' + entry.colorIndex : '')}>
+                  {entry.projects.length > 0
+                    ? entry.projects.map((p) => <span className="hc-sub-tab" key={p.id}>{p.name || 'Untitled'}</span>)
+                    : <span className="hc-sub-note">
+                      {entry.item.kind === 'group' ? 'This group is empty, so it draws nothing yet.'
+                        : entry.item.kind === 'favorites' ? 'Nothing starred, or an entry above already shows it all.'
+                          : 'An entry above already shows this project.'}
+                    </span>}
+                </div>
+              )}
             </li>
           );
         })}
-        {items.length === 0 && (
+        {/* Stale entries draw nothing, so a list made only of them is as empty
+            as an empty one — and has to say the same thing. */}
+        {entries.every((e) => e.missing) && (
           <li className="hc-empty">Nothing chosen — the header is showing every project.</li>
         )}
       </ul>
@@ -111,6 +148,36 @@ export default function HeaderComposer({
         A group appears only once it holds something, a project appears once even if two entries claim it, and
         whatever board you have open always keeps its tab.
       </p>
+    </div>
+  );
+}
+
+/**
+ * The line itself. Dragging is armed by holding the grip, the same bargain the
+ * projects page strikes: the row is full of buttons, and a row that is always
+ * draggable turns every click into a possible drag.
+ */
+function HeaderRow({
+  children, onDragStart, onDragOver, onDrop, onDragEnd
+}: {
+  children: React.ReactNode;
+  onDragStart: () => void;
+  onDragOver: (below: boolean) => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <div className="hc-row" draggable={armed}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
+      onDragEnd={() => { setArmed(false); onDragEnd(); }}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(isBelowMidpoint(e, e.currentTarget)); }}
+      onDrop={(e) => { e.preventDefault(); onDrop(); }}>
+      <span className="hc-grip" title="Drag to reorder"
+        onMouseDown={() => setArmed(true)} onMouseUp={() => setArmed(false)}>
+        <IconGrip />
+      </span>
+      {children}
     </div>
   );
 }

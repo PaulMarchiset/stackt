@@ -65,7 +65,7 @@ export function headerIslands(
   activeId: string | null
 ): ProjectIsland[] {
   if (projects.length === 0) return [];
-  const islands = dedupe(build(items, projects, groups));
+  const islands = coalesce(resolveHeader(items, projects, groups));
   if (islands.length === 0) return withActive([all(projects)], projects, activeId);
   return withActive(islands, projects, activeId);
 }
@@ -73,51 +73,87 @@ export function headerIslands(
 const all = (projects: Project[]): ProjectIsland =>
   ({ key: 'all', label: null, colorIndex: null, projects });
 
-function build(items: HeaderItem[], projects: Project[], groups: ProjectGroup[]): ProjectIsland[] {
+/**
+ * What one entry of the selection actually contributes, after rule 3 has taken
+ * its share away. Entry *i* of `resolveHeader`'s result answers for entry *i*
+ * of the list you gave it, which is what lets the composer show the truth
+ * rather than a hopeful count.
+ */
+export interface HeaderEntry {
+  item: HeaderItem;
+  /* The tab-run label the header draws: a group's name, null for the rest. */
+  label: string | null;
+  /* What to call the entry in a list of entries — always something. */
+  title: string;
+  colorIndex: number | null;
+  /* Everything this entry still brings once earlier entries have taken theirs.
+     Empty means it draws nothing: it is empty, stale, or already covered. */
+  projects: Project[];
+  /* The group or project it names is gone. */
+  missing: boolean;
+}
+
+/**
+ * Resolve a selection, entry by entry, in order.
+ *
+ * This is the single pass rule 3 lives in: a project is claimed by the first
+ * entry that can take it, and later entries see it already gone. Both the
+ * header (which coalesces these into islands) and the composer (which lists
+ * them) read the same result, so what you are shown while choosing is what the
+ * header will draw.
+ */
+export function resolveHeader(items: HeaderItem[], projects: Project[], groups: ProjectGroup[]): HeaderEntry[] {
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
   const groupById = new Map(groups.map((g) => [g.id, g] as const));
-  const out: ProjectIsland[] = [];
-  /* What produced the island currently at the end, so consecutive single
-     projects can join one run: a divider between two lone tabs would draw a
-     boundary that isn't there. An entry resolving to nothing leaves it alone. */
-  let lastKind: HeaderItem['kind'] | null = null;
+  const taken = new Set<string>();
+  const claim = (list: Project[]) => {
+    const mine = list.filter((p) => !taken.has(p.id));
+    mine.forEach((p) => taken.add(p.id));
+    return mine;
+  };
+  const gone = (item: HeaderItem): HeaderEntry =>
+    ({ item, label: null, title: '', colorIndex: null, projects: [], missing: true });
 
-  items.forEach((item, i) => {
+  return items.map((item) => {
     if (item.kind === 'favorites') {
-      const favs = projects.filter((p) => p.favorite);
-      if (!favs.length) return;
-      out.push({ key: 'i' + i + ':favorites', label: null, colorIndex: null, projects: favs });
-      lastKind = 'favorites';
-      return;
+      return {
+        item, label: null, title: 'Favorites', colorIndex: null,
+        projects: claim(projects.filter((p) => p.favorite)), missing: false
+      };
     }
     if (item.kind === 'group') {
       const g = groupById.get(item.id);
-      if (!g) return;                      // the group was deleted — the entry is inert
-      const members = projects.filter((p) => p.group_id === g.id);
-      // An empty group is a plan, not a section — don't draw a label over nothing.
-      if (!members.length) return;
-      out.push({ key: 'i' + i + ':' + g.id, label: g.name, colorIndex: groupColor(g), projects: members });
-      lastKind = 'group';
-      return;
+      if (!g) return gone(item);
+      return {
+        item, label: g.name, title: g.name, colorIndex: groupColor(g),
+        projects: claim(projects.filter((p) => p.group_id === g.id)), missing: false
+      };
     }
     const p = projectById.get(item.id);
-    if (!p) return;                        // the project was deleted
-    if (lastKind === 'project') out[out.length - 1].projects.push(p);
-    else out.push({ key: 'i' + i + ':' + p.id, label: null, colorIndex: null, projects: [p] });
-    lastKind = 'project';
+    if (!p) return gone(item);
+    return { item, label: null, title: p.name || 'Untitled', colorIndex: null, projects: claim([p]), missing: false };
   });
-  return out;
 }
 
-/* Rule 3: the first island that claims a project keeps it. */
-function dedupe(islands: ProjectIsland[]): ProjectIsland[] {
-  const seen = new Set<string>();
+/* Entries → the runs of tabs the header draws. An entry that brings nothing is
+   not a section (an empty group is a plan, not a heading), and consecutive lone
+   projects join one run: a divider between two single tabs would draw a
+   boundary that isn't there. */
+function coalesce(entries: HeaderEntry[]): ProjectIsland[] {
   const out: ProjectIsland[] = [];
-  for (const isle of islands) {
-    const projects = isle.projects.filter((p) => !seen.has(p.id));
-    projects.forEach((p) => seen.add(p.id));
-    if (projects.length) out.push({ ...isle, projects });
-  }
+  let lastKind: HeaderItem['kind'] | null = null;
+  entries.forEach((e, i) => {
+    if (!e.projects.length) return;
+    if (e.item.kind === 'project' && lastKind === 'project') {
+      out[out.length - 1].projects.push(...e.projects);
+      return;
+    }
+    out.push({
+      key: 'i' + i + ':' + (e.item.kind === 'favorites' ? 'favorites' : e.item.id),
+      label: e.label, colorIndex: e.colorIndex, projects: e.projects
+    });
+    lastKind = e.item.kind;
+  });
   return out;
 }
 

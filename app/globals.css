@@ -157,7 +157,35 @@ button { font-family: inherit; }
 }
 .hc-head { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-mute); padding: 4px 2px 6px; }
 .hc-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.hc-row { display: flex; align-items: center; gap: 8px; background: #FBFAF6; border-radius: 10px; padding: 7px 8px 7px 10px; }
+.hc-item { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.hc-row { display: flex; align-items: center; gap: 4px; background: #FBFAF6; border-radius: 10px; padding: 7px 8px 7px 4px; }
+/* The label side of the row is one button: clicking it opens the entry to show
+   what it will actually contribute. */
+.hc-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  border: none; background: transparent; cursor: pointer; text-align: left;
+  padding: 3px 4px; border-radius: 7px; color: inherit;
+}
+.hc-toggle:hover { background: rgba(26, 26, 24, 0.05); }
+.hc-caret { width: 11px; height: 11px; flex-shrink: 0; fill: none; stroke: var(--ink-mute); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transform: rotate(-90deg); transition: transform 140ms var(--ease); }
+.hc-caret.open { transform: rotate(0deg); }
+.hc-grip { flex-shrink: 0; width: 16px; height: 24px; display: grid; place-items: center; color: var(--ink-mute); cursor: grab; opacity: 0.35; transition: opacity 140ms var(--ease); }
+.hc-row:hover .hc-grip { opacity: 0.8; }
+.hc-grip:hover { opacity: 1; }
+.hc-grip:active { cursor: grabbing; }
+.hc-grip svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+/* What the entry brings, in the header's own tab shape — so the preview reads
+   as the thing it is previewing. */
+.hc-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 2px 6px 6px 30px; }
+.hc-sub-tab { font-size: 11.5px; font-weight: 700; white-space: nowrap; padding: 4px 10px; border-radius: 9999px; background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft)); }
+.hc-sub-note { font-size: 11.5px; line-height: 1.45; color: var(--ink-mute); }
+.hc-item.dragging { opacity: 0.4; }
+.hc-item.drop-above::before, .hc-item.drop-below::after {
+  content: ""; position: absolute; left: 4px; right: 4px; height: 3px;
+  border-radius: 2px; background: var(--accent);
+}
+.hc-item.drop-above::before { top: -4px; }
+.hc-item.drop-below::after { bottom: -4px; }
 .hc-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--p-bg, #E7E5DC); box-shadow: inset 0 0 0 2px var(--p-ink, rgba(26, 26, 24, 0.22)); }
 .hc-dot.plain { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(26, 26, 24, 0.22); }
 .hc-star { width: 13px; height: 13px; flex-shrink: 0; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
