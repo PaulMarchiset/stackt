@@ -46,10 +46,16 @@ export function useProjectsStore(
 
   /* ---------- Groups ---------- */
 
-  /* Created at the end of the list; the caller decides what to do with it (the
-     projects page drops the project it was dragging straight into it). */
+  /* Created at the *top* of the list, because a group is made in order to be
+     filled and the thing you are about to fill should not land underneath
+     everything you already have. One step below the lowest position does that
+     in a single insert: sortGroups only reads positions, it never needs them
+     dense, and the next reorder renumbers the lot from 0 anyway.
+
+     The caller decides what to do with the row (the projects page drops the
+     project the group was made for straight into it). */
   async function createGroup(name: string): Promise<ProjectGroup | null> {
-    const position = groups.reduce((m, g) => Math.max(m, g.position), -1) + 1;
+    const position = groups.reduce((m, g) => Math.min(m, g.position), 0) - 1;
     const created = await persistRow<ProjectGroup>(
       supabase.from('project_groups').insert({ name: name.trim() || 'Group', position }).select().single(),
       { message: 'Could not create the group — try again.' }

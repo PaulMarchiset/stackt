@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import type { Project, ProjectGroup } from '@/lib/types';
 import { groupColor, sortGroups } from '@/lib/grouping';
 import { isAfterMidpoint } from '@/lib/useDragSort';
 import { versionTheme } from '@/lib/util';
-import { IconDots, IconGrip, IconPencil, IconPlus, IconStar, IconTick, IconTrash } from '@/app/components/icons';
+import { IconChevronRight, IconDots, IconPencil, IconPlus, IconStar, IconTick, IconTrash } from '@/app/components/icons';
 
 /* Up to two initials from a project name for its card avatar. */
 export function initials(name: string): string {
@@ -18,14 +17,18 @@ export function initials(name: string): string {
 /**
  * One project on the projects page.
  *
- * The ⋯ menu carries the group picker rather than hiding it behind Edit:
- * moving a project is the most frequent thing done on this page, and it should
- * cost one click. It is also the whole story on touch, where `drag` is absent
- * and the card has no handle.
+ * The card is a thing you *move*, and opening it is a button. It used to be the
+ * reverse — the whole card was a link and a hairline grip on its left edge was
+ * the only place a drag could start — which meant the page's main organising
+ * gesture was hidden in eighteen pixels most people never found. Now the body
+ * is the handle: grab it anywhere and it moves. `Open` is a real link, so
+ * middle-click and "open in new tab" keep working, and on touch (where `drag`
+ * is absent and the card doesn't move at all) it is the whole way in, which is
+ * why it spans the card rather than hiding in a corner.
  *
- * Dragging is armed by the grip, not by the card: the card is mostly a link,
- * and links drag themselves by default. Holding the grip is what makes the
- * card draggable at all, so a stray drag on the title still opens the board.
+ * The ⋯ menu carries the group picker rather than burying it behind Edit:
+ * moving a project is the most frequent thing done on this page, and on touch
+ * it is the *only* way to do it.
  */
 export default function ProjectCard({
   project, meta, groups, menuOpen,
@@ -51,27 +54,21 @@ export default function ProjectCard({
   };
 }) {
   const p = project;
-  const [armed, setArmed] = useState(false);
 
   return (
     <div
       className={'proj-card'
+        + (drag ? ' grabbable' : '')
         + (drag?.dragging ? ' dragging' : '')
         + (drag?.dropSide ? ' drop-' + drag.dropSide : '')}
-      draggable={armed}
+      draggable={!!drag}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; drag?.onStart(); }}
-      onDragEnd={() => { setArmed(false); drag?.onEnd(); }}
+      onDragEnd={() => drag?.onEnd()}
       onDragOver={drag && ((e) => {
         e.preventDefault();
         e.stopPropagation();          // the band would otherwise claim the drop for its end
         drag.onOver(isAfterMidpoint(e, e.currentTarget));
       })}>
-      {drag && (
-        <span className="proj-grip" title="Drag to move or reorder"
-          onMouseDown={() => setArmed(true)} onMouseUp={() => setArmed(false)}>
-          <IconGrip />
-        </span>
-      )}
       <div className="proj-actions">
         <button className={'proj-fav' + (p.favorite ? ' on' : '')}
           title={p.favorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -107,10 +104,16 @@ export default function ProjectCard({
         </div>
       )}
 
-      <a className="proj-open" href={'/board?p=' + p.id} draggable={false}>
+      {/* The handle. Nothing in here is clickable, so a press that lands
+          anywhere on it can only mean "pick this up". */}
+      <div className="proj-body">
         <span className={'proj-mark card-theme-' + versionTheme(p.name)}>{initials(p.name)}</span>
         <h2 className="proj-name">{p.name || 'Untitled'}</h2>
         <p className="proj-meta">{meta}</p>
+      </div>
+
+      <a className="proj-go" href={'/board?p=' + p.id} draggable={false}>
+        Open board <IconChevronRight className="ic" />
       </a>
     </div>
   );

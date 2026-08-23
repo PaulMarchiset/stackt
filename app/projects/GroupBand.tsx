@@ -1,22 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProjectSection } from '@/lib/grouping';
 import { PALETTE } from '@/lib/types';
-import { IconDots, IconGrip, IconStar, IconTrash } from '@/app/components/icons';
+import { IconDots, IconGrip, IconTrash } from '@/app/components/icons';
 
 /**
  * One band of the projects page: a heading, and the projects under it.
  *
- * The three kinds share one heading shape on purpose — Favorites, a group and
- * Ungrouped are read as siblings, and a group only distinguishes itself by the
- * two things that are actually different: it has a colour, and its name can be
+ * A band is somewhere a project *lives*, so there are two kinds and they share
+ * one heading shape: a group, and the Ungrouped catch-all. (Favorites is not
+ * one of them — it is the chip bar above, see FavoritesBar.) A group earns the
+ * only two differences that are real: it has a colour, and its name can be
  * fixed where it stands, on the heading you are looking at.
  *
  * Only a group can be reordered, so only a group's heading grows a grip.
  */
 export default function GroupBand({
-  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, drag, head, receiving, children
+  section, groupsExist, menuOpen, onMenu, onRename, onRecolor, onDelete, autoName, drag, head, receiving, children
 }: {
   section: ProjectSection;
   groupsExist: boolean;
@@ -25,6 +26,13 @@ export default function GroupBand({
   onRename: (name: string) => void;
   onRecolor: (index: number) => void;
   onDelete: () => void;
+  /* Freshly created: take the caret to the name and select it, and bring the
+     band on screen. A group is made with a placeholder name instead of behind a
+     dialog — the heading is already an editable field, so the dialog was asking
+     for something the page could ask for itself — and this is what makes that
+     trade honest: you type over the placeholder in the place the name will
+     live, rather than reading a modal and then hunting for where it landed. */
+  autoName?: boolean;
   /* Picking the band up. Desktop only, and groups only — the two implicit
      bands have no order of their own: Favorites always leads, Ungrouped
      always trails. */
@@ -46,7 +54,17 @@ export default function GroupBand({
 }) {
   const [draft, setDraft] = useState(section.label);
   const [armed, setArmed] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setDraft(section.label); }, [section.label]);
+
+  useEffect(() => {
+    if (!autoName) return;
+    const el = nameRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.focus();
+    el.select();
+  }, [autoName]);
 
   const commit = () => {
     const clean = draft.trim() || 'Group';
@@ -83,11 +101,10 @@ export default function GroupBand({
             <IconGrip />
           </span>
         )}
-        {section.kind === 'favorites' && <IconStar className="band-star" />}
         {section.kind === 'group' && <span className="band-dot" aria-hidden />}
 
         {section.kind === 'group' ? (
-          <input className="band-name" value={draft} spellCheck={false} aria-label="Group name"
+          <input ref={nameRef} className="band-name" value={draft} spellCheck={false} aria-label="Group name"
             size={Math.max(6, draft.length)}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}

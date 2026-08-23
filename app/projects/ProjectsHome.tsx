@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Project, ProjectGroup, Version } from '@/lib/types';
-import { applyProjectDrop, projectSections, sortGroups, type ProjectSection } from '@/lib/grouping';
+import { applyProjectDrop, favoriteProjects, projectSections, sortGroups, type ProjectSection } from '@/lib/grouping';
 import { useDevMode } from '@/lib/useDevMode';
 import { useDragSort } from '@/lib/useDragSort';
 import { useIsMobile } from '@/lib/useIsMobile';
@@ -11,12 +11,12 @@ import { useProjectsStore } from '@/lib/useProjectsStore';
 import { useToast } from '@/lib/useToast';
 import { vocab } from '@/lib/labels';
 import Modal from '@/app/board/Modal';
-import { PromptDialog } from '@/app/components/Dialog';
 import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
 import AccountMenu from '@/app/components/AccountMenu';
 import { IconPlus } from '@/app/components/icons';
 import Logo from '../Logo';
+import FavoritesBar from './FavoritesBar';
 import GroupBand from './GroupBand';
 import ProjectCard from './ProjectCard';
 
@@ -52,8 +52,9 @@ function ModeSelect({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
  * header reads (lib/grouping.ts), so a group's name, colour and order are the
  * same on both screens by construction.
  *
- * A favourite deliberately appears twice: once under Favorites, once inside its
- * group. Favorites is a shortcut, not a place a project lives.
+ * Every project is drawn once, in the one band it lives in. Favorites is a
+ * shortcut, so it is drawn like one: the chip bar on top, not a band of its own
+ * repeating cards you can already see (see FavoritesBar).
  */
 export default function ProjectsHome({
   initialProjects, cards, groups: initialGroups = [], userEmail, userName = ''
@@ -78,10 +79,10 @@ export default function ProjectsHome({
   const [delText, setDelText] = useState('');
   const [confirmDelGroup, setConfirmDelGroup] = useState<ProjectGroup | null>(null);
   const [menu, setMenu] = useState<OpenMenu>(null);
-  /* Open while a group is being named. `forProject` is set when the group was
-     started from a project's menu, and that project drops into it as soon as it
-     exists — the reason the group was made in the first place. */
-  const [newGroup, setNewGroup] = useState<{ forProject: string | null } | null>(null);
+  /* The group made a moment ago, whose heading should take the caret. Naming
+     happens in the heading itself rather than in a dialog beforehand, so the
+     only thing left to carry across is *which* band to hand the keyboard to. */
+  const [justMade, setJustMade] = useState<string | null>(null);
 
   // Close an open menu on outside click / Escape.
   useEffect(() => {
@@ -157,11 +158,25 @@ export default function ProjectsHome({
     setEditProj(null);
   }
 
-  async function submitNewGroup(name: string) {
-    const forProject = newGroup?.forProject ?? null;
-    setNewGroup(null);
-    const created = await store.createGroup(name);
-    if (created && forProject) store.patchProject(forProject, { group_id: created.id });
+  /**
+   * Make a group and start naming it.
+   *
+   * There is no "name it first" dialog: the band's heading is already an
+   * editable field, so a modal was asking for something the page could ask for
+   * itself — and it bought that name at the cost of an extra screen, a
+   * placeholder-shaped decision made before you could see the band, and a band
+   * that then appeared somewhere you weren't looking. The group is created with
+   * a placeholder, lands on top, and its heading gets the caret with the
+   * placeholder selected: type, press Enter, done.
+   *
+   * `forProject` is set when the group was started from a project's ⋯ menu, and
+   * that project drops into it at once — the reason the group was made at all.
+   */
+  async function addGroup(forProject: string | null) {
+    const created = await store.createGroup('New group');
+    if (!created) return;
+    if (forProject) store.patchProject(forProject, { group_id: created.id });
+    setJustMade(created.id);
   }
 
   function deleteGroup() {
@@ -171,9 +186,10 @@ export default function ProjectsHome({
   }
 
   const sections = useMemo(() => projectSections(projects, groups), [projects, groups]);
+  const favorites = useMemo(() => favoriteProjects(projects), [projects]);
   /* A group always shows, empty or not — you just made it, and it has to be
-     visible to be filled. The two implicit bands only show when they hold
-     something: an empty "Favorites" heading teaches nothing. */
+     visible to be filled. Ungrouped only shows when it holds something: an
+     empty catch-all heading teaches nothing. */
   const bands = sections.filter((s) => s.kind === 'group' || s.projects.length > 0);
 
   /* Turning a drop into a new order is one pure function (applyProjectDrop);
@@ -219,7 +235,7 @@ export default function ProjectsHome({
         onDelete={() => { setConfirmDel({ id: p.id, name: p.name }); setDelText(''); setMenu(null); }}
         onToggleFavorite={() => store.patchProject(p.id, { favorite: !p.favorite })}
         onMove={(groupId) => { store.patchProject(p.id, { group_id: groupId }); setMenu(null); }}
-        onNewGroup={() => { setNewGroup({ forProject: p.id }); setMenu(null); }}
+        onNewGroup={() => { addGroup(p.id); setMenu(null); }}
         drag={isMobile ? undefined : {
           dragging: dnd.draggingProject === p.id,
           dropSide,
@@ -242,13 +258,15 @@ export default function ProjectsHome({
       <div className="home-head">
         <h1 className="home-title">Your projects</h1>
         <div className="meta-spacer" />
-        <button className="btn ghost" onClick={() => setNewGroup({ forProject: null })}>
+        <button className="btn ghost" onClick={() => addGroup(null)}>
           <IconPlus className="ic" /> New group
         </button>
         <button className="btn solid" onClick={openCreate}>
           <IconPlus className="ic" /> New project
         </button>
       </div>
+
+      <FavoritesBar projects={favorites} onUnfavorite={(id) => store.patchProject(id, { favorite: false })} />
 
       {projects.length === 0 && groups.length === 0 ? (
         <div className="home-grid"><div className="empty-hint">No projects yet — create your first one.</div></div>
@@ -273,6 +291,7 @@ export default function ProjectsHome({
             onRename={(name) => { if (g) store.patchGroup(g.id, { name }); }}
             onRecolor={(i) => { if (g) { store.patchGroup(g.id, { color_index: i }); setMenu(null); } }}
             onDelete={() => { setConfirmDelGroup(g); setMenu(null); }}
+            autoName={!!g && justMade === g.id}
             receiving={dnd.dropSection === section.key}
             drag={isMobile || !g ? undefined : {
               dragging: dnd.draggingGroup === g.id,
@@ -295,12 +314,6 @@ export default function ProjectsHome({
           </GroupBand>
         );
       })}
-
-      {newGroup && (
-        <PromptDialog title="New group" label="Name" placeholder="e.g. Clients" submitLabel="Create" required
-          hint="Groups band this page, and can head the board once they hold something."
-          onSubmit={submitNewGroup} onCancel={() => setNewGroup(null)} />
-      )}
 
       {newOpen && (
         <Modal title="New project" className="modal-wide modal-center" onClose={() => setNewOpen(false)}>

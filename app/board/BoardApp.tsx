@@ -436,13 +436,12 @@ export default function BoardApp({
               onBlur={(e) => store.patchProject(project.id, { name: e.target.value.trim() || 'Untitled' })} />
           </div>
           <div className="sheet-section-label">Switch project</div>
-          {/* Grouped like the projects page, minus Favorites: the sheet lists
-              every project once, and a name showing twice in a switcher is a
-              trap rather than a shortcut. With no groups this is one unlabelled
-              run — exactly the flat list it has always been. */}
+          {/* Grouped like the projects page: every project once, in the band it
+              lives in. With no groups this is one unlabelled run — exactly the
+              flat list it has always been. */}
           <div className="sheet-list">
             {projectSections(projects, groups)
-              .filter((s) => s.kind !== 'favorites' && s.projects.length > 0)
+              .filter((s) => s.projects.length > 0)
               .map((s) => (
                 <div key={s.key} className={'sheet-band' + (s.colorIndex !== null ? ' card-theme-' + s.colorIndex : '')}>
                   {s.kind === 'group' && <div className="sheet-band-label">{s.label}</div>}

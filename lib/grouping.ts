@@ -10,9 +10,10 @@ import { versionColor } from './util';
  *
  *   · the header shows a composed selection (`headerIslands`); it is narrow, so
  *     a project appears at most once — the first entry that claims it wins;
- *   · the projects page shows everything (`projectSections`), where a favourite
- *     deliberately appears twice: once under Favorites for the quick hop, once
- *     inside its group.
+ *   · the projects page shows everything (`projectSections`), one band per
+ *     place a project can *live* — a favourite is not a band there, it is a
+ *     chip in the bar above them (`favoriteProjects`), because a shortcut that
+ *     is drawn like content reads as a duplicate of it.
  */
 
 /* A group's colour follows the same rule as a version's: an explicit choice,
@@ -218,7 +219,7 @@ export function moveItem(items: HeaderItem[], from: number, to: number): HeaderI
    The projects page
    ============================================================ */
 
-export type SectionKind = 'favorites' | 'group' | 'ungrouped';
+export type SectionKind = 'group' | 'ungrouped';
 
 /**
  * One band of the projects page. `key` doubles as the drop target id for the
@@ -235,20 +236,20 @@ export interface ProjectSection {
 }
 
 /**
- * Every project, banded: Favorites, then each group in order, then whatever is
- * ungrouped. Empty bands are returned too — a group you just made has to be
- * visible to be filled, and an empty band is a drop target. The caller decides
- * which ones are worth drawing.
+ * Every project, banded: each group in order, then whatever is ungrouped.
+ * Empty bands are returned too — a group you just made has to be visible to be
+ * filled, and an empty band is a drop target. The caller decides which ones are
+ * worth drawing.
  *
- * Unlike the header, this does **not** deduplicate: a starred project shows up
- * under Favorites *and* inside its group, which is the point of Favorites here.
+ * Every project appears exactly once, because a band is *where a project lives*
+ * and it lives in one place. Favorites is not a band (see `favoriteProjects`):
+ * a second copy of the same cards makes the page look like it is repeating
+ * itself, and — since order is one global sequence — reordering either copy
+ * silently reorders the other.
  */
 export function projectSections(projects: Project[], groups: ProjectGroup[]): ProjectSection[] {
   const known = new Set(groups.map((g) => g.id));
-  const sections: ProjectSection[] = [{
-    key: 'favorites', kind: 'favorites', group: null, label: 'Favorites',
-    colorIndex: null, projects: projects.filter((p) => p.favorite)
-  }];
+  const sections: ProjectSection[] = [];
   for (const g of sortGroups(groups)) {
     sections.push({
       key: g.id, kind: 'group', group: g, label: g.name,
@@ -268,10 +269,11 @@ export function projectSections(projects: Project[], groups: ProjectGroup[]): Pr
  *
  * Dropping is two statements at once — "it belongs here" and "it goes there" —
  * and both fall out of which band received it:
- *   · Favorites  — it becomes a favourite; its group is none of Favorites'
- *                  business, so it keeps it.
  *   · a group    — it joins that group.
  *   · Ungrouped  — it leaves whatever group it was in.
+ *
+ * Starring is not one of them: that is the star's job on the card. A drop can
+ * therefore never mean something the band it landed in has no way to undo.
  *
  * Order is one global sequence (projects.position), the same one the board
  * header reads for its tabs, so a drop is expressed by re-inserting the project
@@ -293,9 +295,7 @@ export function applyProjectDrop(
 
   const moved: Project = {
     ...dragged,
-    favorite: section.kind === 'favorites' ? true : dragged.favorite,
-    group_id: section.kind === 'group' ? (section.group?.id ?? null)
-      : section.kind === 'ungrouped' ? null : dragged.group_id
+    group_id: section.kind === 'group' ? (section.group?.id ?? null) : null
   };
 
   const rest = projects.filter((p) => p.id !== draggedId);
@@ -309,3 +309,12 @@ export function applyProjectDrop(
   next.splice(at < 0 ? rest.length : at, 0, moved);
   return next;
 }
+
+/**
+ * The starred projects, in board order — everything the favorites bar shows.
+ *
+ * Deliberately a plain list and not a `ProjectSection`: the bar is a row of
+ * chips you click to jump, with no drop target and no order of its own, so it
+ * cannot restate the bands underneath it or fight them over `position`.
+ */
+export const favoriteProjects = (projects: Project[]): Project[] => projects.filter((p) => p.favorite);
