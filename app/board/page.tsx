@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { DEMO_USER, demoData } from '@/lib/demo/fixture';
+import { isDemo } from '@/lib/demo/server';
 import { DEFAULT_USER_PREFS, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
 import { parseHeaderItems } from '@/lib/grouping';
 import BoardApp from './BoardApp';
@@ -13,6 +15,26 @@ export default async function BoardPage({
 }: {
   searchParams: { p?: string };
 }) {
+  /* Asked before auth — same reason as /projects. Without ?p the demo opens on
+     the project the screenshots are of, not on whatever sorts first. */
+  if (isDemo()) {
+    const d = demoData();
+    return (
+      <BoardApp
+        demo
+        initialProjects={d.projects}
+        initialCards={d.cards}
+        initialVersions={d.versions}
+        groups={d.groups}
+        headerItems={d.headerItems}
+        userId={DEMO_USER.id}
+        userEmail={DEMO_USER.email}
+        userName={DEMO_USER.name}
+        initialActiveId={searchParams.p ?? 'demo-stackt'}
+      />
+    );
+  }
+
   const supabase = createClient();
   const {
     data: { user }

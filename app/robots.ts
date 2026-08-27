@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/board', '/projects', '/login', '/auth']
+      disallow: ['/board', '/projects', '/login', '/auth', '/demo']
     },
     sitemap: 'https://stackt.paulmarchiset.me/sitemap.xml',
     host: 'https://stackt.paulmarchiset.me'

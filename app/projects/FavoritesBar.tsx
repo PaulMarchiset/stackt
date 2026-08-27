@@ -32,7 +32,7 @@ export default function FavoritesBar({
     <section className="fav-bar">
       <div className="fav-bar-head">
         <IconStar className="band-star" />
-        <h2 className="band-title">Favorites</h2>
+        <h2 className="band-title band-tag">Favorites</h2>
         <span className="band-count">{projects.length}</span>
       </div>
       <div className="fav-chips">

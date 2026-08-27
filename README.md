@@ -149,6 +149,36 @@ else can trigger it.
 
 ---
 
+## Screenshot mode
+
+An empty board makes a poor screenshot, and a real one makes a poor screenshot
+for a different reason. So there is an unlisted demo: go to **`/demo`** and the
+app fills up — six projects in two groups, favorites, and one board (`Stackt`)
+carrying four versions, thirty-odd cards, dates either side of today and a
+couple of bugs.
+
+It is the app, not a mockup. Same routes, same components, same interactions:
+drag cards between columns, open the timeline, fold a group, filter to bugs.
+The only difference is underneath — the rows come from
+[`lib/demo/fixture.ts`](./lib/demo/fixture.ts) instead of the database, and
+every write goes to a stub that accepts it and keeps nothing
+([`lib/demo/db.ts`](./lib/demo/db.ts)), so the demo can be poked at freely and a
+reload puts it back.
+
+- `/demo` turns it on (a 12-hour cookie), `/demo/exit` turns it off.
+- It works signed out *and* signed in — while the cookie is set it takes over
+  `/projects` and `/board`, so you never have to sign out of your own account to
+  photograph a full one. A small badge in the corner says so; `×` hides it for
+  the tab you are shooting in.
+- Nothing links to it and `robots.txt` disallows it.
+- Dates are offsets from today, so the timeline never looks stale.
+- Settings is not part of it: it reads live rows, so under the demo cookie it
+  still asks for a real account.
+
+Editing the fixture is how you change what the screenshots say.
+
+---
+
 ## Layout
 
 ```
@@ -171,6 +201,7 @@ app/
   components/           cross-page pieces — icons.tsx holds every SVG
   api/cron/daily/       the reminder cron target
   auth/                 callback · signout · account deletion
+  demo/                 unlisted: /demo sets the screenshot cookie, /demo/exit drops it
   globals.css           the whole design system
 lib/
   useBoardStore.ts      the board's data layer: state + every Supabase write
@@ -179,6 +210,7 @@ lib/
   useHeaderItems.ts     the header selection, with its single writer
   useDragSort.ts        where a drag is, and nothing about what it means
   importText.ts         the bullet-list grammar, as a pure parser
+  demo/                 the screenshot board: fixture · write-swallowing stub · the cookie
   email/                digest template + swappable providers (console · brevo)
   supabase/             browser · server · middleware clients
   labels.ts             the two vocabularies (developer / plain)

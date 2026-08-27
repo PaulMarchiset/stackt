@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { createDemoClient } from '@/lib/demo/db';
 import { usePersist } from '@/lib/usePersist';
 import { sortGroups } from '@/lib/grouping';
 import type { Project, ProjectGroup } from '@/lib/types';
@@ -19,9 +20,11 @@ import type { Project, ProjectGroup } from '@/lib/types';
 export function useProjectsStore(
   initialProjects: Project[],
   initialGroups: ProjectGroup[],
-  showToast: (msg: string, err?: boolean) => void
+  showToast: (msg: string, err?: boolean) => void,
+  demo = false
 ) {
-  const supabase = useMemo(() => createClient(), []);
+  /* In demo mode the writes go to a stub that keeps nothing — see lib/demo/db.ts. */
+  const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
   const { saving, persist, persistRow } = usePersist(showToast);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [groups, setGroups] = useState<ProjectGroup[]>(initialGroups);

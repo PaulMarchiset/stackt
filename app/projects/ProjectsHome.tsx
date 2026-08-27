@@ -14,6 +14,7 @@ import Modal from '@/app/board/Modal';
 import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
 import AccountMenu from '@/app/components/AccountMenu';
+import DemoBadge from '@/app/components/DemoBadge';
 import { IconPlus } from '@/app/components/icons';
 import Logo from '../Logo';
 import FavoritesBar from './FavoritesBar';
@@ -57,15 +58,18 @@ function ModeSelect({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
  * repeating cards you can already see (see FavoritesBar).
  */
 export default function ProjectsHome({
-  initialProjects, cards, groups: initialGroups = [], userEmail, userName = ''
+  initialProjects, cards, groups: initialGroups = [], userEmail, userName = '', demo = false
 }: {
   initialProjects: Project[]; cards: CardLite[]; groups?: ProjectGroup[];
   userEmail: string; userName?: string;
+  /* Screenshot mode: the rows are a fixture and every write is swallowed
+     (lib/demo/fixture.ts · lib/demo/db.ts). The page itself is unchanged. */
+  demo?: boolean;
 }) {
   const [devMode] = useDevMode();
   const router = useRouter();
   const { toast, showToast } = useToast();
-  const store = useProjectsStore(initialProjects, initialGroups, showToast);
+  const store = useProjectsStore(initialProjects, initialGroups, showToast, demo);
   const { projects, groups, supabase, persistRow } = store;
   /* Dragging is a pointer affordance. On touch there is no handle at all and
      the ⋯ menus do the same work in one tap, so the whole apparatus is simply
@@ -248,7 +252,9 @@ export default function ProjectsHome({
 
   return (
     <div className="home">
-      <WhatsNew />
+      {/* Not in a demo: a release popup over the first screenshot is nobody's
+          idea of a product tour. */}
+      {demo ? <DemoBadge /> : <WhatsNew />}
       <header className="home-top">
         <Logo height={22} className="brand-logo-full" />
         <div className="meta-spacer" />

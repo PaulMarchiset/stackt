@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { createDemoClient } from '@/lib/demo/db';
 import { usePersist } from '@/lib/usePersist';
 import type { HeaderItem } from '@/lib/types';
 
@@ -19,9 +20,11 @@ import type { HeaderItem } from '@/lib/types';
 export function useHeaderItems(
   userId: string,
   initial: HeaderItem[],
-  showToast: (msg: string, err?: boolean) => void
+  showToast: (msg: string, err?: boolean) => void,
+  demo = false
 ) {
-  const supabase = useMemo(() => createClient(), []);
+  /* In demo mode the writes go to a stub that keeps nothing — see lib/demo/db.ts. */
+  const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
   const { persist } = usePersist(showToast);
   const [items, setItems] = useState<HeaderItem[]>(initial);
 

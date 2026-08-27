@@ -14,6 +14,7 @@ import { BoardDevModeContext } from '@/lib/devModeContext';
 import Sheet from '@/app/components/Sheet';
 import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
+import DemoBadge from '@/app/components/DemoBadge';
 import NotifBell from '@/app/components/NotifBell';
 import HeaderComposer from '@/app/components/HeaderComposer';
 import { ConfirmDialog, PromptDialog } from '@/app/components/Dialog';
@@ -40,17 +41,20 @@ type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: 
 export default function BoardApp({
   initialProjects, initialCards, initialVersions,
   groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
-  userId, userEmail, userName = '', initialActiveId
+  userId, userEmail, userName = '', initialActiveId, demo = false
 }: {
   initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
   groups?: ProjectGroup[]; headerItems?: HeaderItem[];
   userId: string; userEmail: string; userName?: string; initialActiveId?: string | null;
+  /* Screenshot mode: the rows are a fixture and every write is swallowed
+     (lib/demo/fixture.ts · lib/demo/db.ts). The board itself is unchanged. */
+  demo?: boolean;
 }) {
-  const store = useBoardStore(initialProjects, initialCards, initialVersions);
+  const store = useBoardStore(initialProjects, initialCards, initialVersions, demo);
   const { projects, cards, versions, saving, toast } = store;
   /* What heads the board is an account setting the board can edit in place —
      same hook, same composer as the settings page. */
-  const selection = useHeaderItems(userId, headerItems, store.showToast);
+  const selection = useHeaderItems(userId, headerItems, store.showToast, demo);
   /* Which group runs are folded shut — per device, not per account: it is about
      how much room this screen has. */
   const [foldedGroups, foldGroup] = useFoldedGroups();
@@ -536,7 +540,9 @@ export default function BoardApp({
       )}
 
       <Toast toast={toast} />
-      <WhatsNew />
+      {/* Not in a demo: a release popup over the first screenshot is nobody's
+          idea of a product tour. */}
+      {demo ? <DemoBadge /> : <WhatsNew />}
     </div>
     </BoardDevModeContext.Provider>
   );

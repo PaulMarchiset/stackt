@@ -1249,25 +1249,49 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
    The two read as siblings, so they share one heading shape. A group earns the
    only two differences that are real: it wears its colour, and its name is
    editable where it stands. */
-.home-band + .home-band { margin-top: 6px; }
-.home-band .home-grid { padding-bottom: 26px; }
-.band-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 20px 28px 0; }
-.band-title { font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 0; }
-.band-title.muted { color: var(--ink-mute); }
-.band-star { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; flex-shrink: 0; }
-.band-dot { width: 11px; height: 11px; border-radius: 4px; flex-shrink: 0; background: var(--p-bg); box-shadow: inset 0 0 0 2px var(--p-ink); }
-/* A heading you can type in: invisible until you reach for it. Its width comes
-   from the `size` attribute, so the box tracks the name instead of leaving a
-   highlighted gutter after a short one. */
-.band-name {
-  font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--p-ink, var(--ink-soft)); background: transparent; border: 1.5px solid transparent; border-radius: 8px;
-  padding: 3px 7px; margin-left: -7px; min-width: 60px; outline: none;
-  transition: background 130ms var(--ease), border-color 130ms var(--ease);
+/* One band has to end before the next begins, and the only thing saying so is
+   air: 16px of grid gap separates two cards, so anything close to that between
+   two bands reads as one long wall. This runs to 78px from the last card of a
+   band to the next band's tag. */
+.home-band + .home-band { margin-top: 26px; }
+.home-band .home-grid { padding-top: 12px; padding-bottom: 30px; }
+.fav-bar + .home-band { margin-top: 20px; }
+.band-head { position: relative; display: flex; align-items: center; gap: 10px; padding: 22px 28px 0; }
+/* Every band heading is a tag, and a group's tag wears the group's colour.
+   This is the same shape the board header gives a group (.isle-label) on
+   purpose: one object, one look, on both screens — a swatch beside grey text
+   here and a tinted pill there described the same thing two ways, and only one
+   of them said "group" at a glance. The neutral fallback is what the two
+   implicit bands get, so colour reads as "this one you named", not decoration. */
+.band-tag {
+  font-family: var(--display); font-weight: 800; font-size: 14px; line-height: 1.3;
+  text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+  background: var(--p-bg, #EDEBE2); color: var(--p-ink, var(--ink-soft));
+  /* The border is transparent and always there: the group's tag is an <input>
+     that grows one on focus, and a heading next to it must not jump 3px when
+     it does. */
+  padding: 6px 13px; border: 1.5px solid transparent; border-radius: 9px;
 }
-.band-name:hover { background: rgba(26, 26, 24, 0.05); }
-.band-name:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); text-transform: none; letter-spacing: 0; }
-.band-count { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+.band-title { margin: 0; }
+/* Favorites answers to its star rather than to a palette slot. */
+.fav-bar-head .band-tag { background: rgba(230, 180, 0, 0.15); color: #8A6300; }
+.band-star { width: 17px; height: 17px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; flex-shrink: 0; }
+/* The group's tag is also the field you rename it in. It keeps its shape while
+   you type — a box that changes colour under the caret reads as a different
+   control — and only drops the uppercase, which is a display choice the text
+   itself should not have to fight. Its width comes from the `size` attribute,
+   so the tag tracks the name instead of leaving a tinted gutter after a short
+   one. */
+input.band-tag {
+  min-width: 72px; outline: none;
+  transition: box-shadow 130ms var(--ease), border-color 130ms var(--ease);
+}
+input.band-tag:hover { box-shadow: inset 0 0 0 1.5px currentColor; }
+input.band-tag:focus {
+  border-color: var(--p-ink, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft);
+  text-transform: none; letter-spacing: 0.01em;
+}
+.band-count { font-family: var(--mono); font-size: 11.5px; color: var(--ink-mute); }
 .band-tools { position: relative; }
 .band-menu-btn {
   border: none; background: transparent; color: var(--ink-mute); width: 26px; height: 26px; border-radius: 8px;
@@ -1653,11 +1677,14 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
   .home-head { padding: 20px 16px 14px; flex-wrap: wrap; gap: 12px; }
   .home-title { font-size: 26px; }
   .band-head { padding: 18px 16px 0; }
+  .home-band + .home-band { margin-top: 18px; }
+  .fav-bar + .home-band { margin-top: 14px; }
+  .band-tag { font-size: 13px; padding: 5px 11px; }
   .fav-bar { padding: 10px 16px 0; }
   .fav-chip-name { max-width: 150px; }
   .home-band.band-over .band-head::before { left: 16px; right: 16px; }
   .home-grid { grid-template-columns: 1fr; padding: 6px 16px 40px; gap: 12px; }
-  .home-band .home-grid { padding-bottom: 22px; }
+  .home-band .home-grid { padding-top: 10px; padding-bottom: 24px; }
   .proj-card:hover { transform: none; }
   .proj-actions button { opacity: 1; }
 
@@ -1699,4 +1726,82 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
   .otp { gap: 6px; }
   .otp-box { width: 40px; height: 50px; font-size: 20px; }
   .auth-card { padding: 28px 18px 30px; }
+}
+
+/* ============================================================
+   Demo badge — the one thing on screen that isn't the app.
+   Bottom-left so it stays out of the way of the header, the
+   version bar and the columns, which are what gets photographed.
+   ============================================================ */
+.demo-badge {
+  position: fixed; left: 16px; bottom: 16px; z-index: 60;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 12px; border-radius: 9999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow); font-size: 12px; color: var(--ink-soft);
+}
+.demo-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.demo-badge-text { white-space: nowrap; }
+.demo-badge-link { color: var(--ink); font-weight: 600; text-decoration: none; padding: 2px 8px; border-radius: 9999px; background: var(--canvas); }
+.demo-badge-link:hover { background: var(--accent-soft); }
+.demo-badge-hide {
+  border: 0; background: transparent; cursor: pointer; color: var(--ink-mute);
+  font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px;
+}
+.demo-badge-hide:hover { color: var(--ink); background: var(--canvas); }
+
+@media (max-width: 720px) {
+  /* The mobile board has its own bottom furniture — keep clear of it. */
+  .demo-badge { left: 10px; bottom: 10px; padding: 6px 6px 6px 10px; }
+  .demo-badge-text { display: none; }
+}
+
+/* ============================================================
+   Title card (/demo/logo) — the wordmark, full page, on the grid.
+   The body already paints the grid, so the card paints nothing:
+   it only places the logo and reveals the line word by word.
+   ============================================================ */
+.hero {
+  min-height: 100dvh; display: grid; place-items: center;
+  padding: 6vh 5vw; cursor: none; /* filming surface: no arrow in the shot */
+}
+.hero-inner { display: grid; justify-items: center; gap: clamp(22px, 4vh, 54px); }
+
+/* Its own copy of the bar setup: this logo never wears .brand-logo-full, so the
+   header's hover animation can't interrupt the loop. */
+.hero-logo { display: block; color: var(--ink); width: min(78vw, 1040px); height: auto; overflow: visible; }
+.hero-logo .bar { transform-box: fill-box; transform-origin: right center; }
+.hero-logo .bar-1 { --full: 1; }
+.hero-logo .bar-2 { --full: 1.364; }
+.hero-logo .bar-3 { --full: 1.875; }
+
+/* Same wave as the header's, given a tail of stillness so the loop reads as a
+   beat rather than a fidget: motion for the first ~2s, then a pause. */
+@keyframes heroWave {
+  0%        { transform: scaleX(1); }
+  18%       { transform: scaleX(0); }
+  25%       { transform: scaleX(0); }
+  36%       { transform: scaleX(var(--full, 1)); }
+  45%, 100% { transform: scaleX(1); }
+}
+.hero-logo .bar { animation: heroWave 4.4s var(--ease) infinite both; }
+.hero-logo .bar-2 { animation-delay: 0.18s; }
+.hero-logo .bar-3 { animation-delay: 0.36s; }
+
+.hero-line {
+  margin: 0; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 0.05em 0.34em;
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(19px, 2.9vw, 40px); line-height: 1.25;
+  letter-spacing: -0.015em; color: var(--ink-soft);
+}
+.hero-word { display: inline-block; opacity: 0; animation: heroWord 0.72s var(--ease) both; }
+@keyframes heroWord {
+  from { opacity: 0; transform: translateY(0.42em); filter: blur(7px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo .bar { animation: none; }
+  .hero-word { animation: none; opacity: 1; }
 }

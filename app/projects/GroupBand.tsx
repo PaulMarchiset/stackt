@@ -9,10 +9,11 @@ import { IconDots, IconGrip, IconTrash } from '@/app/components/icons';
  * One band of the projects page: a heading, and the projects under it.
  *
  * A band is somewhere a project *lives*, so there are two kinds and they share
- * one heading shape: a group, and the Ungrouped catch-all. (Favorites is not
- * one of them — it is the chip bar above, see FavoritesBar.) A group earns the
- * only two differences that are real: it has a colour, and its name can be
- * fixed where it stands, on the heading you are looking at.
+ * one heading shape — a tag, the same one the board header gives a group. (
+ * Favorites is not one of them: it is the chip bar above, see FavoritesBar.) A
+ * group earns the only two differences that are real: its tag wears the group's
+ * colour, and the tag *is* the field its name is fixed in, on the heading you
+ * are looking at.
  *
  * Only a group can be reordered, so only a group's heading grows a grip.
  */
@@ -101,10 +102,8 @@ export default function GroupBand({
             <IconGrip />
           </span>
         )}
-        {section.kind === 'group' && <span className="band-dot" aria-hidden />}
-
         {section.kind === 'group' ? (
-          <input ref={nameRef} className="band-name" value={draft} spellCheck={false} aria-label="Group name"
+          <input ref={nameRef} className="band-tag" value={draft} spellCheck={false} aria-label="Group name"
             size={Math.max(6, draft.length)}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
@@ -113,7 +112,7 @@ export default function GroupBand({
               if (e.key === 'Escape') { setDraft(section.label); e.currentTarget.blur(); }
             }} />
         ) : (
-          <h2 className={'band-title' + (section.kind === 'ungrouped' ? ' muted' : '')}>{label}</h2>
+          <h2 className="band-title band-tag">{label}</h2>
         )}
 
         <span className="band-count">{section.projects.length}</span>
