@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { createDemoClient } from '@/lib/demo/db';
 import type { Card, CardDraft, EditTarget, Project, Status, Version } from '@/lib/types';
 import type { ImportBlock } from '@/lib/importText';
 import { usePersist } from '@/lib/usePersist';
@@ -18,11 +19,14 @@ import { useToast } from '@/lib/useToast';
  *
  * BoardApp owns *view* state (what's open, what's filtered) and calls in here
  * for anything that touches data — so the two never tangle again.
+ *
+ * `demo` swaps the database for a stub that accepts every write and keeps none
+ * (lib/demo/db.ts): the board stays fully usable with no account behind it.
  */
 export function useBoardStore(
-  initialProjects: Project[], initialCards: Card[], initialVersions: Version[]
+  initialProjects: Project[], initialCards: Card[], initialVersions: Version[], demo = false
 ) {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [versions, setVersions] = useState<Version[]>(initialVersions);

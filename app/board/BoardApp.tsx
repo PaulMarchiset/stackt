@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderMode, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
+import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
-import { headerIslands } from '@/lib/headerProjects';
+import { headerIslands, projectSections } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
+import { useHeaderItems } from '@/lib/useHeaderItems';
+import { useFoldedGroups } from '@/lib/useFoldedGroups';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { useDevMode } from '@/lib/useDevMode';
 import { vocab } from '@/lib/labels';
@@ -12,7 +14,9 @@ import { BoardDevModeContext } from '@/lib/devModeContext';
 import Sheet from '@/app/components/Sheet';
 import Toast from '@/app/components/Toast';
 import WhatsNew from '@/app/components/WhatsNew';
+import DemoBadge from '@/app/components/DemoBadge';
 import NotifBell from '@/app/components/NotifBell';
+import HeaderComposer from '@/app/components/HeaderComposer';
 import { ConfirmDialog, PromptDialog } from '@/app/components/Dialog';
 import { IconPlus, IconRepo } from '@/app/components/icons';
 import CardEditor from './CardEditor';
@@ -36,15 +40,24 @@ type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: 
  */
 export default function BoardApp({
   initialProjects, initialCards, initialVersions,
-  groups = [], headerMode = DEFAULT_USER_PREFS.header_mode,
-  userEmail, userName = '', initialActiveId
+  groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
+  userId, userEmail, userName = '', initialActiveId, demo = false
 }: {
   initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
-  groups?: ProjectGroup[]; headerMode?: HeaderMode;
-  userEmail: string; userName?: string; initialActiveId?: string | null;
+  groups?: ProjectGroup[]; headerItems?: HeaderItem[];
+  userId: string; userEmail: string; userName?: string; initialActiveId?: string | null;
+  /* Screenshot mode: the rows are a fixture and every write is swallowed
+     (lib/demo/fixture.ts · lib/demo/db.ts). The board itself is unchanged. */
+  demo?: boolean;
 }) {
-  const store = useBoardStore(initialProjects, initialCards, initialVersions);
+  const store = useBoardStore(initialProjects, initialCards, initialVersions, demo);
   const { projects, cards, versions, saving, toast } = store;
+  /* What heads the board is an account setting the board can edit in place —
+     same hook, same composer as the settings page. */
+  const selection = useHeaderItems(userId, headerItems, store.showToast, demo);
+  /* Which group runs are folded shut — per device, not per account: it is about
+     how much room this screen has. */
+  const [foldedGroups, foldGroup] = useFoldedGroups();
   const isMobile = useIsMobile();
   const [defaultDevMode] = useDevMode();
 
@@ -60,6 +73,7 @@ export default function BoardApp({
   const [justMoved, setJustMoved] = useState<string | null>(null);
   const [verPop, setVerPop] = useState<VersionPopAnchor | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   // Mobile-only UI: which bottom sheet is open, and swipe-column pager state.
   const [sheet, setSheet] = useState<MobileSheet>(null);
@@ -95,10 +109,10 @@ export default function BoardApp({
   const versionName = (id: string | null | undefined) => (id ? versionById.get(id)?.name ?? '' : '');
   const openCount = (projectId: string) => cards.filter((c) => c.project_id === projectId && !c.done).length;
   // Which projects head the board, and how they're segmented — an account
-  // setting, resolved by one pure function (lib/headerProjects.ts).
+  // setting, resolved by one pure function (lib/grouping.ts).
   const islands = useMemo(
-    () => headerIslands(headerMode, projects, groups, activeId),
-    [headerMode, projects, groups, activeId]
+    () => headerIslands(selection.items, projects, groups, activeId),
+    [selection.items, projects, groups, activeId]
   );
   /* Which island each tab belongs to. Dragging reorders projects, it does not
      re-group them — so a drag that crosses an island boundary is refused rather
@@ -160,6 +174,19 @@ export default function BoardApp({
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [verPop, project, isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Same dismissal as every other popover: click away, or press Escape.
+  useEffect(() => {
+    if (!composerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.hdr-pop, .hdr-pick-btn')) setComposerOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setComposerOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [composerOpen]);
+
   const header = isMobile ? (
     <MobileTopbar project={project} view={view} saving={saving}
       onOpenProjects={() => setSheet({ kind: 'project' })}
@@ -168,6 +195,10 @@ export default function BoardApp({
   ) : (
     <Topbar islands={islands} activeId={activeId} project={project} view={view} devMode={devMode}
       userEmail={userEmail} userName={userName} openCount={openCount}
+      composerOpen={composerOpen} onComposer={() => setComposerOpen((o) => !o)}
+      foldedGroups={foldedGroups} onFoldGroup={foldGroup}
+      composer={<HeaderComposer items={selection.items} projects={projects} groups={groups}
+        onChange={selection.update} />}
       onSelectProject={selectProject}
       onDragStart={(id) => { dragProj.current = id; }}
       onDragOverTab={(overId) => {
@@ -409,14 +440,24 @@ export default function BoardApp({
               onBlur={(e) => store.patchProject(project.id, { name: e.target.value.trim() || 'Untitled' })} />
           </div>
           <div className="sheet-section-label">Switch project</div>
+          {/* Grouped like the projects page: every project once, in the band it
+              lives in. With no groups this is one unlabelled run — exactly the
+              flat list it has always been. */}
           <div className="sheet-list">
-            {projects.map((p) => (
-              <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
-                onClick={() => { selectProject(p.id); setSheet(null); }}>
-                {p.name || 'Untitled'}
-                <span className="count">{openCount(p.id)}</span>
-              </button>
-            ))}
+            {projectSections(projects, groups)
+              .filter((s) => s.projects.length > 0)
+              .map((s) => (
+                <div key={s.key} className={'sheet-band' + (s.colorIndex !== null ? ' card-theme-' + s.colorIndex : '')}>
+                  {s.kind === 'group' && <div className="sheet-band-label">{s.label}</div>}
+                  {s.projects.map((p) => (
+                    <button key={p.id} className={'sheet-item' + (p.id === activeId ? ' active' : '')}
+                      onClick={() => { selectProject(p.id); setSheet(null); }}>
+                      {p.name || 'Untitled'}
+                      <span className="count">{openCount(p.id)}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
           </div>
           <a className="sheet-item link" href="/projects">All projects →</a>
         </Sheet>
@@ -499,7 +540,9 @@ export default function BoardApp({
       )}
 
       <Toast toast={toast} />
-      <WhatsNew />
+      {/* Not in a demo: a release popup over the first screenshot is nobody's
+          idea of a product tour. */}
+      {demo ? <DemoBadge /> : <WhatsNew />}
     </div>
     </BoardDevModeContext.Provider>
   );

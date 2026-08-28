@@ -1,0 +1,17 @@
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { DEMO_ENABLED } from '@/lib/demo/mode';
+import LogoCard from './LogoCard';
+
+/**
+ * A title card to film: nothing but the wordmark, the tagline and the grid the
+ * whole app sits on. It lives under /demo because it is the same kind of thing
+ * — a surface that exists to be photographed, unlisted and disallowed in
+ * robots.txt — but it carries no fixture and no cookie: it is just a page.
+ */
+export const metadata: Metadata = { title: 'Stackt', robots: { index: false, follow: false } };
+
+export default function LogoPage() {
+  if (!DEMO_ENABLED) notFound();
+  return <LogoCard />;
+}

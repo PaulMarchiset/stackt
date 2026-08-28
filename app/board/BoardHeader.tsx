@@ -1,10 +1,10 @@
 'use client';
 
 import type { Project } from '@/lib/types';
-import type { ProjectIsland } from '@/lib/headerProjects';
+import type { ProjectIsland } from '@/lib/grouping';
 import { repoLabel, versionTheme } from '@/lib/util';
 import AccountMenu from '@/app/components/AccountMenu';
-import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconTimeline } from '@/app/components/icons';
+import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconSliders, IconTimeline } from '@/app/components/icons';
 import Logo from '../Logo';
 
 export type BoardView = 'board' | 'timeline';
@@ -45,18 +45,27 @@ function RepoButton({ project, onOpen }: { project: Project; onOpen: () => void 
 }
 
 export function Topbar({
-  islands, activeId, project, view, devMode, userEmail, userName, openCount,
-  onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo
+  islands, activeId, project, view, devMode, userEmail, userName, openCount, composer, composerOpen,
+  foldedGroups, onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onComposer, onFoldGroup
 }: {
   islands: ProjectIsland[]; activeId: string | null; project: Project | null;
   view: BoardView; devMode: boolean; userEmail: string; userName: string;
   openCount: (projectId: string) => number;
+  /* Group ids whose run is folded shut. */
+  foldedGroups: string[];
+  /* The header's own "what goes here" panel. It hangs off the actions row
+     rather than off the tabs: the tab strip scrolls sideways, and a popover
+     anchored inside it would be clipped by that scroll. */
+  composer: React.ReactNode;
+  composerOpen: boolean;
   onSelectProject: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragOverTab: (overId: string) => void;
   onDropTab: () => void;
   onView: (v: BoardView) => void;
   onOpenRepo: () => void;
+  onComposer: () => void;
+  onFoldGroup: (groupId: string) => void;
 }) {
   return (
     <header className="topbar">
@@ -64,28 +73,65 @@ export function Topbar({
         <Logo height={22} className="brand-logo-full" />
       </a>
       {/* One run of tabs per island. A labelled island wears its group name; the
-          divider is what makes two runs read as two places rather than one list. */}
+          divider is what makes two runs read as two places rather than one list.
+          Clicking the name folds the run shut — the header is the narrowest
+          thing on screen, and a group you aren't working in today can wait
+          behind its own label. */}
       <div className="projects" role="tablist">
-        {islands.map((isle, i) => (
-          <div key={isle.key} className={'proj-isle card-theme-' + (isle.colorIndex ?? versionTheme(isle.label ?? ''))}>
-            {i > 0 && <span className="isle-sep" aria-hidden />}
-            {isle.label && <span className="isle-label">{isle.label}</span>}
-            {isle.projects.map((p) => (
-              <button key={p.id} className={'tab' + (p.id === activeId ? ' active' : '')}
-                draggable
-                onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
-                onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
-                onDrop={(e) => { e.preventDefault(); onDropTab(); }}
-                onDragEnd={onDropTab}
-                onClick={() => onSelectProject(p.id)}>
-                {p.name || 'Untitled'}
-                <span className="count">{openCount(p.id)}</span>
-              </button>
-            ))}
-          </div>
-        ))}
+        {islands.map((isle, i) => {
+          const folded = !!isle.groupId && foldedGroups.includes(isle.groupId);
+          /* Folded still shows the open board: the rule that you can always see
+             where you are outranks the one that says this run is shut. */
+          const tucked = (id: string) => folded && id !== activeId;
+          const hidden = isle.projects.filter((p) => tucked(p.id)).length;
+          return (
+            <div key={isle.key}
+              className={'proj-isle card-theme-' + (isle.colorIndex ?? versionTheme(isle.label ?? ''))}>
+              {i > 0 && <span className="isle-sep" aria-hidden />}
+              {isle.label && (isle.groupId ? (
+                <button className="isle-label" aria-expanded={!folded}
+                  title={folded ? 'Show this group' : 'Fold this group'}
+                  onClick={() => onFoldGroup(isle.groupId as string)}>
+                  {isle.label}
+                  {hidden > 0 && <span className="isle-more">{hidden}</span>}
+                </button>
+              ) : <span className="isle-label">{isle.label}</span>)}
+              {/* Every tab stays mounted, folded or not — a tab removed from
+                  the page cannot animate its way out. The slot is what closes,
+                  and it closes onto the tab's own width rather than a guessed
+                  one (grid 1fr → 0fr), so the run zips shut at any length.
+                  A shut tab is taken out of the tab order and hidden from
+                  assistive tech: still there, no longer reachable. */}
+              {isle.projects.map((p) => (
+                <span key={p.id} className={'tab-slot' + (tucked(p.id) ? ' tucked' : '')}
+                  aria-hidden={tucked(p.id)}>
+                  <span className="tab-slot-in">
+                    <button className={'tab' + (p.id === activeId ? ' active' : '')}
+                      draggable tabIndex={tucked(p.id) ? -1 : undefined}
+                      onDragStart={(e) => { onDragStart(p.id); e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragOver={(e) => { e.preventDefault(); onDragOverTab(p.id); }}
+                      onDrop={(e) => { e.preventDefault(); onDropTab(); }}
+                      onDragEnd={onDropTab}
+                      onClick={() => onSelectProject(p.id)}>
+                      {p.name || 'Untitled'}
+                      <span className="count">{openCount(p.id)}</span>
+                    </button>
+                  </span>
+                </span>
+              ))}
+            </div>
+          );
+        })}
       </div>
       <div className="topbar-actions">
+        <div className="hdr-pick">
+          <button className={'icon-btn hdr-pick-btn' + (composerOpen ? ' on' : '')}
+            title="Choose what heads the board" aria-label="Choose what heads the board"
+            aria-haspopup="dialog" aria-expanded={composerOpen} onClick={onComposer}>
+            <IconSliders />
+          </button>
+          {composerOpen && <div className="hdr-pop" role="dialog" aria-label="Board header">{composer}</div>}
+        </div>
         <ViewToggle view={view} onChange={onView} />
         {project && devMode && <RepoButton project={project} onOpen={onOpenRepo} />}
         <AccountMenu userEmail={userEmail} userName={userName} />

@@ -53,8 +53,9 @@ says *Phase* and *Urgent*. Same app underneath, different words on top.
   coming up, sitting undated, or shipping soon. You pick the projects, the
   sections, the horizon and the weekdays; a live preview shows what will land.
 - **Many projects, one home.** Side projects, client work, that thing you'll
-  definitely finish — switch between them instantly. Head the board with your
-  favorites, a hand-picked set, or your own groups as side-by-side islands.
+  definitely finish — switch between them instantly. Band them into groups by
+  dragging on the projects page, then build the board header out of whatever
+  you want in it: your favorites, any group, any single project, in your order.
 - **Private by default.** Every row is owned by a user and guarded by row-level
   security in Postgres.
 
@@ -148,6 +149,39 @@ else can trigger it.
 
 ---
 
+## Screenshot mode
+
+An empty board makes a poor screenshot, and a real one makes a poor screenshot
+for a different reason. So there is an unlisted demo: set
+`NEXT_PUBLIC_ENABLE_DEMO=true` in `.env.local`, go to **`/demo`**, and the
+app fills up — six projects in two groups, favorites, and one board (`Stackt`)
+carrying four versions, thirty-odd cards, dates either side of today and a
+couple of bugs.
+
+It is the app, not a mockup. Same routes, same components, same interactions:
+drag cards between columns, open the timeline, fold a group, filter to bugs.
+The only difference is underneath — the rows come from
+[`lib/demo/fixture.ts`](./lib/demo/fixture.ts) instead of the database, and
+every write goes to a stub that accepts it and keeps nothing
+([`lib/demo/db.ts`](./lib/demo/db.ts)), so the demo can be poked at freely and a
+reload puts it back.
+
+- `/demo` turns it on (a 12-hour cookie), `/demo/exit` turns it off.
+- It works signed out *and* signed in — while the cookie is set it takes over
+  `/projects` and `/board`, so you never have to sign out of your own account to
+  photograph a full one. A small badge in the corner says so; `×` hides it for
+  the tab you are shooting in.
+- It is off unless `NEXT_PUBLIC_ENABLE_DEMO=true`, which production does not
+  set: there, `/demo` is a 404 and the cookie opens nothing. Nothing links to
+  it either way, and `robots.txt` disallows it.
+- Dates are offsets from today, so the timeline never looks stale.
+- Settings is not part of it: it reads live rows, so under the demo cookie it
+  still asks for a real account.
+
+Editing the fixture is how you change what the screenshots say.
+
+---
+
 ## Layout
 
 ```
@@ -165,16 +199,21 @@ app/
     DateField.tsx       editor date input · DatePill.tsx  reschedule from a card
     Timeline.tsx        horizontal gantt · Agenda.tsx  its mobile counterpart
     Modal.tsx           dialog on desktop, bottom sheet on touch
-  projects/             all-projects home
-  settings/             profile · board header + groups · email reminder builder
+  projects/             all-projects home, banded by group (ProjectCard · GroupBand)
+  settings/             profile · board header · email reminder builder
   components/           cross-page pieces — icons.tsx holds every SVG
   api/cron/daily/       the reminder cron target
   auth/                 callback · signout · account deletion
+  demo/                 unlisted: /demo sets the screenshot cookie, /demo/exit drops it
   globals.css           the whole design system
 lib/
   useBoardStore.ts      the board's data layer: state + every Supabase write
-  headerProjects.ts     header mode + groups → the islands the header draws
+  useProjectsStore.ts   the projects page's data layer: projects *and* groups
+  grouping.ts           groups → the header's islands and the page's bands
+  useHeaderItems.ts     the header selection, with its single writer
+  useDragSort.ts        where a drag is, and nothing about what it means
   importText.ts         the bullet-list grammar, as a pure parser
+  demo/                 the screenshot board: fixture · write-swallowing stub · the cookie
   email/                digest template + swappable providers (console · brevo)
   supabase/             browser · server · middleware clients
   labels.ts             the two vocabularies (developer / plain)
@@ -191,10 +230,17 @@ edited and owns no markup beyond layout; everything else is a component that
 renders one thing. Adding a field means touching `types.ts`, a migration, and
 the one component that shows it — not a 900-line file.
 
-Two rules keep the pure layer honest. `headerIslands()` is what the board header
-renders **and** what the settings preview renders, so the sample can't lie about
-what you'll get. `parseImport()` is what the import preview shows **and** what
-the writer consumes, so nothing is created that the preview didn't show.
+Two rules keep the pure layer honest. `lib/grouping.ts` is the only thing that
+knows how projects are organised — `headerIslands()` draws the board header,
+`projectSections()` bands the projects page, and `applyProjectDrop()` says what
+a drop meant — so the two screens cannot disagree about a group's name, colour
+or order. `parseImport()` is what the import preview shows **and** what the
+writer consumes, so nothing is created that the preview didn't show.
+
+The two surfaces do differ in one deliberate way: the header shows a project
+once (it is narrow, and two lit tabs for one board is a puzzle), while the
+projects page shows a favourite twice — under Favorites and inside its group,
+because Favorites is a shortcut, not a place a project lives.
 
 ## Notes
 

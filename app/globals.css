@@ -124,11 +124,40 @@ button { font-family: inherit; }
 .proj-isle { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .isle-sep { width: 1px; height: 20px; margin: 0 6px; background: rgba(26,26,24,0.14); flex-shrink: 0; }
 .isle-label {
-  flex-shrink: 0; font-family: var(--display); font-size: 9.5px; font-weight: 800;
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--display); font-size: 9.5px; font-weight: 800;
   text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
   background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
   padding: 4px 9px; border-radius: 7px;
 }
+/* A group's name is also its switch: click it and the run folds behind it. */
+button.isle-label { border: none; cursor: pointer; transition: box-shadow 140ms var(--ease); }
+button.isle-label:hover { box-shadow: inset 0 0 0 1.5px currentColor; }
+button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+/* How many tabs are tucked away behind the name — the only sign a run is shut,
+   and the only one needed: an open run has nothing to count. */
+.isle-more {
+  font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0;
+  background: rgba(255, 255, 255, 0.6); padding: 1px 5px; border-radius: 5px;
+  /* Lands as the run finishes closing, so the count reads as what the tabs
+     turned into rather than as a second, unrelated thing appearing. */
+  animation: countIn 200ms var(--ease) 140ms both;
+}
+@keyframes countIn { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .isle-more { animation: none; } }
+
+/* A tab's slot. Folding animates the *track* from the tab's own width to
+   nothing (1fr → 0fr), which is the one way to reach a real content width
+   without hard-coding one; the inner span is what does the clipping, and the
+   negative margin swallows the island's gap as the tab goes, so a shut run
+   leaves no ghost spacing behind. */
+.tab-slot {
+  display: grid; grid-template-columns: 1fr; flex-shrink: 0;
+  transition: grid-template-columns 260ms var(--ease), opacity 170ms var(--ease), margin-left 260ms var(--ease);
+}
+.tab-slot-in { min-width: 0; overflow: hidden; }
+.tab-slot.tucked { grid-template-columns: 0fr; opacity: 0; margin-left: -6px; }
+@media (prefers-reduced-motion: reduce) { .tab-slot { transition: none; } }
 
 .tab {
   flex-shrink: 0; border: none; background: transparent; color: var(--ink-soft);
@@ -142,6 +171,57 @@ button { font-family: inherit; }
 .tab.active .count { opacity: 0.85; }
 
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ---------- Header composer ----------
+   The same block twice: hanging under the board's own header, and inline in
+   settings. It sits in the actions row rather than among the tabs because the
+   tab strip scrolls sideways and would clip a popover anchored inside it. */
+.hdr-pick { position: relative; }
+.hdr-pick-btn.on { background: rgba(26, 26, 24, 0.07); color: var(--ink); }
+.hdr-pop {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 40; width: 328px;
+  max-height: min(70vh, 540px); overflow-y: auto;
+  background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 12px;
+  animation: rise 140ms var(--ease) both;
+}
+.hc-head { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-mute); padding: 4px 2px 6px; }
+.hc-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.hc-item { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.hc-row { display: flex; align-items: center; gap: 8px; background: #FBFAF6; border-radius: 10px; padding: 7px 8px 7px 4px; }
+.hc-grip { flex-shrink: 0; width: 16px; height: 24px; display: grid; place-items: center; color: var(--ink-mute); cursor: grab; opacity: 0.35; transition: opacity 140ms var(--ease); }
+.hc-row:hover .hc-grip { opacity: 0.8; }
+.hc-grip:hover { opacity: 1; }
+.hc-grip:active { cursor: grabbing; }
+.hc-grip svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+.hc-item.dragging { opacity: 0.4; }
+.hc-item.drop-above::before, .hc-item.drop-below::after {
+  content: ""; position: absolute; left: 4px; right: 4px; height: 3px;
+  border-radius: 2px; background: var(--accent);
+}
+.hc-item.drop-above::before { top: -4px; }
+.hc-item.drop-below::after { bottom: -4px; }
+.hc-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--p-bg, #E7E5DC); box-shadow: inset 0 0 0 2px var(--p-ink, rgba(26, 26, 24, 0.22)); }
+.hc-dot.plain { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(26, 26, 24, 0.22); }
+.hc-star { width: 13px; height: 13px; flex-shrink: 0; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
+.hc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; color: var(--ink); }
+.hc-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-mute); }
+.hc-btn { border: none; background: transparent; color: var(--ink-mute); width: 22px; height: 22px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
+.hc-btn:hover:not(:disabled) { background: rgba(26, 26, 24, 0.07); color: var(--ink); }
+.hc-btn:disabled { opacity: 0.28; cursor: default; }
+.hc-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hc-btn .up { transform: rotate(180deg); }
+.hc-btn.del:hover { background: var(--danger-soft); color: var(--danger); }
+.hc-empty { font-size: 12.5px; line-height: 1.5; color: var(--ink-mute); padding: 6px 2px; }
+.hc-add { display: flex; flex-wrap: wrap; gap: 6px; }
+.hc-chip {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--ink-soft);
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 9999px;
+  transition: border-color 130ms var(--ease), color 130ms var(--ease);
+}
+.hc-chip:hover { border-color: var(--ink-mute); color: var(--ink); }
+.hc-chip-ic { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.hc-note { font-size: 11.5px; line-height: 1.5; color: var(--ink-mute); margin: 12px 2px 0; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 6px; border: none;
@@ -1001,68 +1081,6 @@ button { font-family: inherit; }
 .set-preset:hover { background: #E9E7DE; color: var(--ink); }
 .set-preset.on { background: var(--ink); color: #fff; }
 
-/* ---- Board header: mode picker, live sample, groups ---- */
-.set-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 9px; }
-.set-mode {
-  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
-  border: 1.5px solid var(--border); background: #FBFAF6; border-radius: var(--radius-xs); padding: 12px 14px;
-  transition: border-color 140ms var(--ease), background 140ms var(--ease), box-shadow 140ms var(--ease);
-}
-.set-mode:hover { border-color: var(--ink-mute); }
-.set-mode.on { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
-.set-mode-name { font-family: var(--display); font-size: 14px; font-weight: 800; color: var(--ink); }
-.set-mode-hint { font-size: 12px; line-height: 1.4; color: var(--ink-mute); }
-
-/* The sample is rendered by headerIslands(), the same function the board uses —
-   so what you see here cannot drift from what you will get. */
-.set-sample {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 16px;
-  background: var(--canvas); border-radius: var(--radius-xs); padding: 12px 14px; overflow-x: auto;
-}
-.set-sample-isle { display: flex; align-items: center; gap: 6px; }
-.set-sample-sep { width: 1px; height: 18px; margin: 0 5px; background: rgba(26,26,24,0.16); }
-.set-sample-label {
-  font-family: var(--display); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
-  background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft)); padding: 3px 8px; border-radius: 6px; white-space: nowrap;
-}
-.set-sample-tab {
-  font-size: 12px; font-weight: 700; color: var(--ink-soft); background: var(--surface);
-  box-shadow: var(--shadow-sm); padding: 5px 12px; border-radius: 9999px; white-space: nowrap;
-}
-
-/* Chosen mode: the projects, as chips you click. Off is a quiet outline, on is
-   filled with a tick — the state is the fill, not a control beside the name. */
-.set-pick { display: flex; flex-wrap: wrap; gap: 8px; }
-.set-pickopt {
-  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
-  border: 1.5px solid var(--border); background: #FBFAF6; color: var(--ink-soft);
-  font-family: var(--sans); font-size: 13px; font-weight: 600;
-  padding: 8px 15px; border-radius: 9999px;
-  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
-}
-.set-pickopt:hover { border-color: var(--ink-mute); color: var(--ink); }
-.set-pickopt.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.set-pickopt:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-.set-pickopt svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-
-.set-grouplist { display: flex; flex-direction: column; gap: 8px; }
-.set-group { display: flex; align-items: center; gap: 11px; background: #FBFAF6; border-radius: var(--radius-xs); padding: 9px 11px; }
-.set-group .set-swatch { width: 12px; height: 12px; border-radius: 4px; }
-.set-group-name { flex: 1; min-width: 0; background: var(--surface); }
-.set-group-colors { display: flex; gap: 5px; flex-shrink: 0; }
-.set-group-colors .color-opt { width: 18px; height: 18px; border-width: 2px; }
-
-/* Assigning a project to a group: real buttons, not a native <select> — the
-   colours are the point, and no OS lets you style an <option>. */
-.set-grouppick { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
-.set-gopt {
-  border: 2px solid transparent; cursor: pointer; background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
-  font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 9999px;
-  transition: border-color 130ms var(--ease), transform 100ms var(--ease);
-}
-.set-gopt:hover { transform: translateY(-1px); }
-.set-gopt.on { border-color: var(--ink); }
-
 /* Horizon stepper */
 .set-inline { display: flex; align-items: center; }
 .set-stepper { display: inline-flex; align-items: stretch; background: #FBFAF6; border: 1.5px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; }
@@ -1121,7 +1139,24 @@ button { font-family: inherit; }
 .home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 16px; padding: 6px 28px 48px; align-items: start; }
 .proj-card { position: relative; background: var(--surface); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); transition: box-shadow 160ms var(--ease), transform 130ms var(--ease); }
 .proj-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
-.proj-open { display: block; padding: 20px 20px 22px; text-decoration: none; }
+/* The card body is the drag handle, so it holds nothing clickable and never
+   takes a text selection that would fight the drag. */
+.proj-body { padding: 20px 20px 16px; -webkit-user-select: none; user-select: none; }
+.proj-card.grabbable .proj-body { cursor: grab; }
+.proj-card.grabbable:active .proj-body { cursor: grabbing; }
+/* Opening the board is the one thing on the card you click, so it is spelled
+   out along the foot instead of hiding as a third icon in the corner — and it
+   is a real link, which is what keeps middle-click and "open in new tab". */
+.proj-go {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 11px 20px; text-decoration: none; border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-family: var(--sans); font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+.proj-go:hover { background: var(--canvas); color: var(--ink); }
+.proj-go .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 140ms var(--ease); }
+.proj-go:hover .ic { transform: translateX(2px); }
 /* Initials avatar (colored per project via a card-theme-* class) */
 .proj-mark {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1147,36 +1182,161 @@ button { font-family: inherit; }
 .proj-fav:hover { background: rgba(230, 180, 0, 0.14); color: #E6B400; transform: scale(1.08); }
 .proj-fav.on svg { fill: #E6B400; }
 
-/* Per-card ⋯ menu (Rename / Delete) */
-.proj-menu {
-  position: absolute; top: 46px; right: 12px; z-index: 5; min-width: 156px;
+/* Popover menus on this page: a card's ⋯ and a band's. One look, one set of
+   rules — they sit side by side on screen and any drift between them shows. */
+.proj-menu, .band-menu {
+  position: absolute; z-index: 5; min-width: 186px; max-height: 62vh; overflow-y: auto;
   display: flex; flex-direction: column; gap: 2px; padding: 6px;
   background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-lg);
   animation: rise 140ms var(--ease) both;
 }
-.proj-menu button {
+.proj-menu { top: 46px; right: 12px; }
+.band-menu { top: 30px; left: 0; }
+.proj-menu button, .band-menu button {
   display: flex; align-items: center; gap: 9px; width: 100%; border: none; background: transparent;
   color: var(--ink); font-family: var(--sans); font-size: 13px; font-weight: 700; text-align: left;
   padding: 9px 10px; border-radius: 8px; cursor: pointer; transition: background 130ms var(--ease), color 130ms var(--ease);
 }
-.proj-menu button:hover { background: var(--canvas); }
-.proj-menu button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.proj-menu button.danger { color: var(--danger); }
-.proj-menu button.danger:hover { background: var(--danger-soft); }
+.proj-menu button:hover, .band-menu button:hover { background: var(--canvas); }
+.proj-menu button svg, .band-menu button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.proj-menu button.danger, .band-menu button.danger { color: var(--danger); }
+.proj-menu button.danger:hover, .band-menu button.danger:hover { background: var(--danger-soft); }
+.proj-menu button.on { background: var(--canvas); }
+.proj-menu-sep, .band-menu-sep { height: 1px; background: var(--border); margin: 5px 2px; flex-shrink: 0; }
+.proj-menu-head, .band-menu-head { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-mute); padding: 5px 10px 3px; }
+/* The group's colour, at menu scale — same swatch as the band's dot. */
+.proj-menu-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--p-bg, #E7E5DC); box-shadow: inset 0 0 0 2px var(--p-ink, rgba(26,26,24,0.22)); }
+.proj-menu-dot.none { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(26,26,24,0.22); }
+.proj-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-menu-tick { margin-left: auto; color: var(--ink-soft); }
+.band-colors { display: flex; gap: 6px; padding: 2px 8px 6px; }
 .del-name { font-family: var(--mono); background: var(--danger-soft); color: #B4282C; padding: 1px 7px; border-radius: 6px; }
 
-/* Inline rename on a project card */
-.proj-open.editing { cursor: default; }
-.proj-rename {
-  width: 100%; font-family: var(--display); font-weight: 800; font-size: 18px; letter-spacing: -0.02em;
-  color: var(--ink); border: 1.5px solid var(--accent); background: var(--surface); border-radius: 9px;
-  padding: 5px 9px; margin: 0 0 4px; outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
-}
 
-/* Section headings on the projects home */
-.home-section { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 8px 0 0; padding: 0 28px; }
-.home-section.muted { color: var(--ink-mute); margin-top: 22px; }
-.home-section-ic { width: 15px; height: 15px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; }
+/* ---- Favorites: a bar of shortcuts, sitting above the bands ----
+   It wears a band's heading so it reads as part of the same page, then
+   deliberately stops looking like one: chips, not cards. The bands below are
+   where projects live and every project is in exactly one of them; this is only
+   the way to jump straight to a board without scrolling to find it. Drawn with
+   the same cards, it made the page look like it was repeating itself. */
+.fav-bar { padding: 12px 28px 0; }
+.fav-bar-head { display: flex; align-items: center; gap: 9px; padding: 8px 0 11px; }
+.fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fav-chip {
+  display: inline-flex; align-items: center; background: var(--surface); border-radius: 999px;
+  box-shadow: var(--shadow-sm); transition: box-shadow 150ms var(--ease), transform 130ms var(--ease);
+}
+.fav-chip:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+.fav-chip-open { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 2px 5px 5px; text-decoration: none; color: var(--ink); }
+.fav-chip-mark {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; flex-shrink: 0;
+  font-family: var(--display); font-weight: 800; font-size: 10px;
+  background: var(--p-bg, var(--accent-soft)); color: var(--p-ink, var(--ink));
+}
+.fav-chip-name { font-family: var(--sans); font-size: 13px; font-weight: 700; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The star is filled, because everything in this bar is starred — pressing it
+   is how a project leaves, the same gesture that put it here. */
+.fav-chip-off {
+  border: none; background: transparent; cursor: pointer; margin-right: 3px;
+  width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center;
+  opacity: 0.5; transition: opacity 140ms var(--ease), background 140ms var(--ease);
+}
+.fav-chip:hover .fav-chip-off { opacity: 1; }
+.fav-chip-off:hover { background: rgba(230, 180, 0, 0.16); }
+.fav-chip-off svg { width: 14px; height: 14px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.5; stroke-linejoin: round; }
+
+/* ---- Bands: each group, then whatever is ungrouped ----
+   The two read as siblings, so they share one heading shape. A group earns the
+   only two differences that are real: it wears its colour, and its name is
+   editable where it stands. */
+/* One band has to end before the next begins, and the only thing saying so is
+   air: 16px of grid gap separates two cards, so anything close to that between
+   two bands reads as one long wall. This runs to 78px from the last card of a
+   band to the next band's tag. */
+.home-band + .home-band { margin-top: 26px; }
+.home-band .home-grid { padding-top: 12px; padding-bottom: 30px; }
+.fav-bar + .home-band { margin-top: 20px; }
+.band-head { position: relative; display: flex; align-items: center; gap: 10px; padding: 22px 28px 0; }
+/* Every band heading is a tag, and a group's tag wears the group's colour.
+   This is the same shape the board header gives a group (.isle-label) on
+   purpose: one object, one look, on both screens — a swatch beside grey text
+   here and a tinted pill there described the same thing two ways, and only one
+   of them said "group" at a glance. The neutral fallback is what the two
+   implicit bands get, so colour reads as "this one you named", not decoration. */
+.band-tag {
+  font-family: var(--display); font-weight: 800; font-size: 14px; line-height: 1.3;
+  text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+  background: var(--p-bg, #EDEBE2); color: var(--p-ink, var(--ink-soft));
+  /* The border is transparent and always there: the group's tag is an <input>
+     that grows one on focus, and a heading next to it must not jump 3px when
+     it does. */
+  padding: 6px 13px; border: 1.5px solid transparent; border-radius: 9px;
+}
+.band-title { margin: 0; }
+/* Favorites answers to its star rather than to a palette slot. */
+.fav-bar-head .band-tag { background: rgba(230, 180, 0, 0.15); color: #8A6300; }
+.band-star { width: 17px; height: 17px; fill: #E6B400; stroke: #E6B400; stroke-width: 1.4; stroke-linejoin: round; flex-shrink: 0; }
+/* The group's tag is also the field you rename it in. It keeps its shape while
+   you type — a box that changes colour under the caret reads as a different
+   control — and only drops the uppercase, which is a display choice the text
+   itself should not have to fight. Its width comes from the `size` attribute,
+   so the tag tracks the name instead of leaving a tinted gutter after a short
+   one. */
+input.band-tag {
+  min-width: 72px; outline: none;
+  transition: box-shadow 130ms var(--ease), border-color 130ms var(--ease);
+}
+input.band-tag:hover { box-shadow: inset 0 0 0 1.5px currentColor; }
+input.band-tag:focus {
+  border-color: var(--p-ink, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft);
+  text-transform: none; letter-spacing: 0.01em;
+}
+.band-count { font-family: var(--mono); font-size: 11.5px; color: var(--ink-mute); }
+.band-tools { position: relative; }
+.band-menu-btn {
+  border: none; background: transparent; color: var(--ink-mute); width: 26px; height: 26px; border-radius: 8px;
+  cursor: pointer; display: grid; place-items: center; opacity: 0.55;
+  transition: opacity 140ms var(--ease), background 140ms var(--ease), color 140ms var(--ease);
+}
+.band-head:hover .band-menu-btn, .band-menu-btn[aria-expanded="true"] { opacity: 1; }
+.band-menu-btn:hover { background: rgba(26, 26, 24, 0.06); color: var(--ink); }
+.band-menu-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* An empty group is a promise, not a mistake — it spans the grid and says what to do. */
+.band-empty { grid-column: 1 / -1; }
+
+/* ---- Dragging: cards between bands, bands among themselves ----
+   A card is picked up by its body, so it needs no grip. A band heading still
+   does: it is a row of controls — an editable name, a menu — and a heading that
+   is always draggable turns every click on it into a possible drag. It stays
+   invisible until you hover the heading it belongs to. */
+.band-grip {
+  position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 22px; display: grid; place-items: center;
+  color: var(--ink-mute); cursor: grab; opacity: 0; transition: opacity 140ms var(--ease);
+}
+.band-head:hover .band-grip { opacity: 0.6; }
+.band-grip:hover { opacity: 1; }
+.band-grip:active { cursor: grabbing; }
+.band-grip svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+
+/* What is in flight fades; where it would land is marked. */
+.proj-card.dragging { opacity: 0.38; }
+.proj-card.drop-before::before, .proj-card.drop-after::after {
+  content: ""; position: absolute; top: 6px; bottom: 6px; width: 3px;
+  border-radius: 2px; background: var(--accent);
+}
+.proj-card.drop-before::before { left: -9px; }
+.proj-card.drop-after::after { right: -9px; }
+
+/* The band about to receive the card tints whole: a drop changes which band a
+   project belongs to, so the band is the thing that has to answer. */
+.home-band { border-radius: 18px; transition: background 160ms var(--ease); }
+.home-band.band-receiving { background: var(--accent-soft); }
+.home-band.band-dragging { opacity: 0.5; }
+.home-band.band-over .band-head::before {
+  content: ""; position: absolute; left: 28px; right: 28px; top: 9px;
+  height: 3px; border-radius: 2px; background: var(--accent);
+}
 
 /* ---------- Auth ---------- */
 .auth-screen { min-height: 100%; display: grid; place-items: center; padding: 40px 20px; }
@@ -1468,6 +1628,15 @@ button { font-family: inherit; }
   .sheet-body { display: flex; flex-direction: column; gap: 6px; }
   .sheet-section-label { font-family: var(--display); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); margin: 8px 2px 2px; }
   .sheet-list, .sheet-moves { display: flex; flex-direction: column; gap: 6px; }
+  /* Groups in the project switcher: the same label the header wears on a tab run. */
+  .sheet-band { display: flex; flex-direction: column; gap: 6px; }
+  .sheet-band + .sheet-band { margin-top: 10px; }
+  .sheet-band-label {
+    align-self: flex-start; font-family: var(--display); font-size: 9.5px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    background: var(--p-bg, #F1F0EA); color: var(--p-ink, var(--ink-soft));
+    padding: 4px 9px; border-radius: 7px;
+  }
   .sheet-item {
     display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
     border: none; background: var(--canvas); color: var(--ink); font-family: var(--sans); font-size: 15px; font-weight: 700;
@@ -1507,8 +1676,15 @@ button { font-family: inherit; }
   .home-top { gap: 12px; padding: 16px 14px 14px; padding-top: calc(16px + env(safe-area-inset-top)); min-height: calc(74px + env(safe-area-inset-top)); }
   .home-head { padding: 20px 16px 14px; flex-wrap: wrap; gap: 12px; }
   .home-title { font-size: 26px; }
-  .home-section { padding: 0 16px; }
+  .band-head { padding: 18px 16px 0; }
+  .home-band + .home-band { margin-top: 18px; }
+  .fav-bar + .home-band { margin-top: 14px; }
+  .band-tag { font-size: 13px; padding: 5px 11px; }
+  .fav-bar { padding: 10px 16px 0; }
+  .fav-chip-name { max-width: 150px; }
+  .home-band.band-over .band-head::before { left: 16px; right: 16px; }
   .home-grid { grid-template-columns: 1fr; padding: 6px 16px 40px; gap: 12px; }
+  .home-band .home-grid { padding-top: 10px; padding-bottom: 24px; }
   .proj-card:hover { transform: none; }
   .proj-actions button { opacity: 1; }
 
@@ -1534,10 +1710,6 @@ button { font-family: inherit; }
   .set-day { width: 36px; height: 36px; }
   .set-day-presets { width: 100%; margin: 4px 0 0; }
   .set-preset { flex: 1; }
-  .set-modes { grid-template-columns: 1fr; }
-  .set-group { flex-wrap: wrap; }
-  .set-group-name { flex: 1 1 100%; order: -1; }
-  .set-grouppick { justify-content: flex-start; width: 100%; }
   .set-proj { flex-wrap: wrap; }
 
   /* Import: one column, the preview under the paste area. */
@@ -1554,4 +1726,82 @@ button { font-family: inherit; }
   .otp { gap: 6px; }
   .otp-box { width: 40px; height: 50px; font-size: 20px; }
   .auth-card { padding: 28px 18px 30px; }
+}
+
+/* ============================================================
+   Demo badge — the one thing on screen that isn't the app.
+   Bottom-left so it stays out of the way of the header, the
+   version bar and the columns, which are what gets photographed.
+   ============================================================ */
+.demo-badge {
+  position: fixed; left: 16px; bottom: 16px; z-index: 60;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 12px; border-radius: 9999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow); font-size: 12px; color: var(--ink-soft);
+}
+.demo-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.demo-badge-text { white-space: nowrap; }
+.demo-badge-link { color: var(--ink); font-weight: 600; text-decoration: none; padding: 2px 8px; border-radius: 9999px; background: var(--canvas); }
+.demo-badge-link:hover { background: var(--accent-soft); }
+.demo-badge-hide {
+  border: 0; background: transparent; cursor: pointer; color: var(--ink-mute);
+  font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px;
+}
+.demo-badge-hide:hover { color: var(--ink); background: var(--canvas); }
+
+@media (max-width: 720px) {
+  /* The mobile board has its own bottom furniture — keep clear of it. */
+  .demo-badge { left: 10px; bottom: 10px; padding: 6px 6px 6px 10px; }
+  .demo-badge-text { display: none; }
+}
+
+/* ============================================================
+   Title card (/demo/logo) — the wordmark, full page, on the grid.
+   The body already paints the grid, so the card paints nothing:
+   it only places the logo and reveals the line word by word.
+   ============================================================ */
+.hero {
+  min-height: 100dvh; display: grid; place-items: center;
+  padding: 6vh 5vw; cursor: none; /* filming surface: no arrow in the shot */
+}
+.hero-inner { display: grid; justify-items: center; gap: clamp(22px, 4vh, 54px); }
+
+/* Its own copy of the bar setup: this logo never wears .brand-logo-full, so the
+   header's hover animation can't interrupt the loop. */
+.hero-logo { display: block; color: var(--ink); width: min(78vw, 1040px); height: auto; overflow: visible; }
+.hero-logo .bar { transform-box: fill-box; transform-origin: right center; }
+.hero-logo .bar-1 { --full: 1; }
+.hero-logo .bar-2 { --full: 1.364; }
+.hero-logo .bar-3 { --full: 1.875; }
+
+/* Same wave as the header's, given a tail of stillness so the loop reads as a
+   beat rather than a fidget: motion for the first ~2s, then a pause. */
+@keyframes heroWave {
+  0%        { transform: scaleX(1); }
+  18%       { transform: scaleX(0); }
+  25%       { transform: scaleX(0); }
+  36%       { transform: scaleX(var(--full, 1)); }
+  45%, 100% { transform: scaleX(1); }
+}
+.hero-logo .bar { animation: heroWave 4.4s var(--ease) infinite both; }
+.hero-logo .bar-2 { animation-delay: 0.18s; }
+.hero-logo .bar-3 { animation-delay: 0.36s; }
+
+.hero-line {
+  margin: 0; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 0.05em 0.34em;
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(19px, 2.9vw, 40px); line-height: 1.25;
+  letter-spacing: -0.015em; color: var(--ink-soft);
+}
+.hero-word { display: inline-block; opacity: 0; animation: heroWord 0.72s var(--ease) both; }
+@keyframes heroWord {
+  from { opacity: 0; transform: translateY(0.42em); filter: blur(7px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo .bar { animation: none; }
+  .hero-word { animation: none; opacity: 1; }
 }

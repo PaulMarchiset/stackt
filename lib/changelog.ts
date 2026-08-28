@@ -19,15 +19,15 @@ export type Changelog = {
 };
 
 export const CHANGELOG: Changelog = {
-  version: '2026-08-15',
+  version: '2026-08-19',
   title: "What's new",
   items: [
+    { title: 'Groups, where the projects are', body: 'Your projects page is banded by group — make one, name it in place, give it a colour.' },
+    { title: 'Drag to organise', body: 'Pull a project into another group, or between two cards to order it. Drag a heading to order the groups.' },
+    { title: 'Build your own header', body: 'Favorites, any group, any single project — added, ordered and removed from the board itself.' },
     { title: 'Import a bullet list', body: 'Paste, preview, create.' },
     { title: 'Ship dates', body: 'Give a version a date — it shows up as a milestone.' },
-    { title: 'Pick what heads the board', body: 'Favorites, a chosen set, or your own groups.' },
     { title: 'Reminder days', body: 'Weekdays only, or any set you like.' },
-    { title: 'Reschedule from the card', body: 'Click a date pill, pick a day.' },
-    { title: 'A lighter phone layout', body: 'A floating + button, and more room for the board.' },
   ],
 };
 

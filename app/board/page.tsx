@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { DEFAULT_USER_PREFS, type HeaderMode, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
+import { DEMO_USER, demoData } from '@/lib/demo/fixture';
+import { isDemo } from '@/lib/demo/server';
+import { DEFAULT_USER_PREFS, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
+import { parseHeaderItems } from '@/lib/grouping';
 import BoardApp from './BoardApp';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +15,26 @@ export default async function BoardPage({
 }: {
   searchParams: { p?: string };
 }) {
+  /* Asked before auth — same reason as /projects. Without ?p the demo opens on
+     the project the screenshots are of, not on whatever sorts first. */
+  if (isDemo()) {
+    const d = demoData();
+    return (
+      <BoardApp
+        demo
+        initialProjects={d.projects}
+        initialCards={d.cards}
+        initialVersions={d.versions}
+        groups={d.groups}
+        headerItems={d.headerItems}
+        userId={DEMO_USER.id}
+        userEmail={DEMO_USER.email}
+        userName={DEMO_USER.name}
+        initialActiveId={searchParams.p ?? 'demo-stackt'}
+      />
+    );
+  }
+
   const supabase = createClient();
   const {
     data: { user }
@@ -23,8 +46,16 @@ export default async function BoardPage({
     supabase.from('cards').select('*').order('created_at'),
     supabase.from('versions').select('*').order('position'),
     supabase.from('project_groups').select('*').order('position'),
-    supabase.from('user_prefs').select('header_mode').eq('user_id', user.id).maybeSingle()
+    supabase.from('user_prefs').select('header_items').eq('user_id', user.id).maybeSingle()
   ]);
+
+  /* No row means "never chose anything" — the defaults. An existing row with an
+     empty list means the opposite: you took everything out on purpose, and the
+     header falls back to showing every project (see headerIslands, rule 1).
+     Collapsing the two would put Favorites back after a reload. */
+  const items: HeaderItem[] = prefs
+    ? parseHeaderItems(prefs.header_items)
+    : DEFAULT_USER_PREFS.header_items;
 
   return (
     <BoardApp
@@ -32,7 +63,8 @@ export default async function BoardPage({
       initialCards={(cards ?? []) as Card[]}
       initialVersions={(versions ?? []) as Version[]}
       groups={(groups ?? []) as ProjectGroup[]}
-      headerMode={(prefs?.header_mode as HeaderMode) ?? DEFAULT_USER_PREFS.header_mode}
+      headerItems={items}
+      userId={user.id}
       userEmail={user.email ?? ''}
       userName={(user.user_metadata?.username as string) ?? ''}
       initialActiveId={searchParams.p ?? null}

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { DEMO_COOKIE, DEMO_ENABLED } from '@/lib/demo/mode';
 
 /** Refreshes the auth session and guards protected routes. */
 export async function updateSession(request: NextRequest) {
@@ -30,8 +31,18 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path.startsWith('/login') || path.startsWith('/signup');
+  /* A demo visitor has no session and still belongs on /projects and /board:
+     those pages serve the fixture instead of a query when the cookie is set
+     (see lib/demo/server.ts). Without this they would bounce to /login.
+
+     The cookie only counts where the demo is switched on, so in production it
+     opens nothing and this is the plain auth gate it was before. /demo stays
+     public either way: the routes under it answer 404 on their own when the
+     flag is off, which is a truer answer than a bounce to /login. */
+  const isDemo = DEMO_ENABLED && request.cookies.get(DEMO_COOKIE)?.value === '1';
   const isPublic = path === '/' || isAuthPage || path.startsWith('/auth')
-    || path.startsWith('/terms') || path.startsWith('/privacy') || path.startsWith('/legal');
+    || path.startsWith('/terms') || path.startsWith('/privacy') || path.startsWith('/legal')
+    || path.startsWith('/demo') || isDemo;
 
   // Not signed in and trying to reach the app → send to login.
   if (!user && !isPublic) {

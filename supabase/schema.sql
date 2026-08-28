@@ -23,11 +23,14 @@ $$;
 -- Deliberately separate from email_prefs: that table is about one feature, this
 -- one is about the account. A missing row means "all defaults".
 create table if not exists public.user_prefs (
-  user_id     uuid primary key references auth.users (id) on delete cascade,
-  header_mode text not null default 'favorites' -- which projects head the board
-              check (header_mode in ('favorites','custom','groups')),
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  user_id      uuid primary key references auth.users (id) on delete cascade,
+  -- What heads the board, in order: [{kind:'favorites'}, {kind:'group',id}, …].
+  -- Ids inside the list are deliberately not foreign keys (see migration 0007).
+  header_items jsonb not null default '[{"kind": "favorites"}]'::jsonb
+               check (jsonb_typeof(header_items) = 'array'),
+
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
 );
 
 -- ---------- Project groups ("islands" in the board header) ----------
@@ -51,7 +54,7 @@ create table if not exists public.projects (
   active_version_id uuid,                       -- FK added after the versions table (circular dependency)
   group_id          uuid references public.project_groups (id) on delete set null,
   favorite          boolean not null default false,
-  pinned            boolean not null default false, -- hand-picked header selection
+
   repo_url          text not null default '',
   dev_mode          boolean,                    -- null = follow the device default
   remind            boolean not null default false,
