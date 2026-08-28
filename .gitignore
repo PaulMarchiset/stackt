@@ -6,3 +6,13 @@
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Local renders from the marketing film (the renderer itself lives on chore/film).
+.film-frames/
+film.mp4
+film.webm
+film-hq.mp4
+film-2x.webm
+/hero/
+/f.mp4
+/f.webm
