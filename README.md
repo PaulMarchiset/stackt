@@ -152,7 +152,8 @@ else can trigger it.
 ## Screenshot mode
 
 An empty board makes a poor screenshot, and a real one makes a poor screenshot
-for a different reason. So there is an unlisted demo: go to **`/demo`** and the
+for a different reason. So there is an unlisted demo: set
+`NEXT_PUBLIC_ENABLE_DEMO=true` in `.env.local`, go to **`/demo`**, and the
 app fills up — six projects in two groups, favorites, and one board (`Stackt`)
 carrying four versions, thirty-odd cards, dates either side of today and a
 couple of bugs.
@@ -170,7 +171,9 @@ reload puts it back.
   `/projects` and `/board`, so you never have to sign out of your own account to
   photograph a full one. A small badge in the corner says so; `×` hides it for
   the tab you are shooting in.
-- Nothing links to it and `robots.txt` disallows it.
+- It is off unless `NEXT_PUBLIC_ENABLE_DEMO=true`, which production does not
+  set: there, `/demo` is a 404 and the cookie opens nothing. Nothing links to
+  it either way, and `robots.txt` disallows it.
 - Dates are offsets from today, so the timeline never looks stale.
 - Settings is not part of it: it reads live rows, so under the demo cookie it
   still asks for a real account.

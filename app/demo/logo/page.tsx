@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { DEMO_ENABLED } from '@/lib/demo/mode';
 import LogoCard from './LogoCard';
 
 /**
@@ -10,5 +12,6 @@ import LogoCard from './LogoCard';
 export const metadata: Metadata = { title: 'Stackt', robots: { index: false, follow: false } };
 
 export default function LogoPage() {
+  if (!DEMO_ENABLED) notFound();
   return <LogoCard />;
 }

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { DEMO_COOKIE, DEMO_MAX_AGE } from '@/lib/demo/mode';
+import { DEMO_COOKIE, DEMO_ENABLED, DEMO_MAX_AGE } from '@/lib/demo/mode';
 
 /**
  * The way in. Unlisted on purpose: nothing links here, robots.txt disallows it,
@@ -13,6 +13,8 @@ import { DEMO_COOKIE, DEMO_MAX_AGE } from '@/lib/demo/mode';
 export const dynamic = 'force-dynamic';
 
 export function GET(request: NextRequest) {
+  if (!DEMO_ENABLED) return new NextResponse(null, { status: 404 });
+
   const response = NextResponse.redirect(new URL('/projects', request.url));
   response.cookies.set(DEMO_COOKIE, '1', {
     path: '/', maxAge: DEMO_MAX_AGE, sameSite: 'lax'

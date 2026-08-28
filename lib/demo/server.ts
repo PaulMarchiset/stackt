@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { DEMO_COOKIE } from './mode';
+import { DEMO_COOKIE, DEMO_ENABLED } from './mode';
 
 /**
  * Is this request in demo mode?
@@ -13,5 +13,5 @@ import { DEMO_COOKIE } from './mode';
  * middleware, which needs the cookie name too.
  */
 export function isDemo(): boolean {
-  return cookies().get(DEMO_COOKIE)?.value === '1';
+  return DEMO_ENABLED && cookies().get(DEMO_COOKIE)?.value === '1';
 }
