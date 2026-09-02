@@ -1,3 +1,7 @@
+/* Importing this from a Client Component fails the build instead of shipping the
+   service-role key to the browser. The comment below was the only thing standing
+   between that key and a bundle; now the compiler enforces it. */
+import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 
 /* Service-role Supabase client for trusted server-only contexts (e.g. the cron

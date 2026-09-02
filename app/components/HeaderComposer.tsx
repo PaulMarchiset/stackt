@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { HeaderItem, Project, ProjectGroup } from '@/lib/types';
+import type { HeaderItem, BoardProject, ProjectGroup } from '@/lib/types';
 import { addItem, groupColor, hasItem, moveItem, removeItem, resolveHeader, sortGroups } from '@/lib/grouping';
 import { isBelowMidpoint } from '@/lib/useDragSort';
 import { IconChevronDown, IconClose, IconGrip, IconPlus, IconStar } from '@/app/components/icons';
@@ -31,7 +31,7 @@ export default function HeaderComposer({
   items, projects, groups, onChange
 }: {
   items: HeaderItem[];
-  projects: Project[];
+  projects: BoardProject[];
   groups: ProjectGroup[];
   onChange: (next: HeaderItem[]) => void;
 }) {

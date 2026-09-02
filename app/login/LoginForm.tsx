@@ -101,11 +101,17 @@ export default function LoginForm({ mode = 'signin' }: { mode?: 'signin' | 'sign
       token,
       type: 'email'
     });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       console.error('verifyOtp error:', error);
       setError(error.message || 'Invalid or expired code.');
     } else {
+      /* Same claim the magic-link callback makes, for the code path — the two
+         are the only ways in, and an invitation must be picked up whichever one
+         you used. Awaited so the projects page renders with the shared project
+         already there, but never allowed to block the sign-in if it fails. */
+      const { error: claimErr } = await supabase.rpc('claim_project_invites');
+      if (claimErr) console.error('claim_project_invites failed:', claimErr.message);
       window.location.assign('/projects'); // full reload so the server sees the new session
     }
   }

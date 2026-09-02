@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import { createDemoClient } from '@/lib/demo/db';
 import { usePersist } from '@/lib/usePersist';
 import { sortGroups } from '@/lib/grouping';
-import type { Project, ProjectGroup } from '@/lib/types';
+import { isPersonalField } from '@/lib/personal';
+import type { BoardProject, ProjectGroup } from '@/lib/types';
 
 /**
  * The projects page's data layer: every read is state, every write is optimistic
@@ -18,26 +19,48 @@ import type { Project, ProjectGroup } from '@/lib/types';
  * group frees its projects, dropping a card re-groups *and* re-orders it).
  */
 export function useProjectsStore(
-  initialProjects: Project[],
+  initialProjects: BoardProject[],
   initialGroups: ProjectGroup[],
   showToast: (msg: string, err?: boolean) => void,
+  /* Needed because the personal fields below are written to this user's
+     membership row, not to the shared project. */
+  userId: string,
   demo = false
 ) {
   /* In demo mode the writes go to a stub that keeps nothing — see lib/demo/db.ts. */
   const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
   const { saving, persist, persistRow } = usePersist(showToast);
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<BoardProject[]>(initialProjects);
   const [groups, setGroups] = useState<ProjectGroup[]>(initialGroups);
 
   const RETRY = 'Could not save — check your connection.';
 
   /* ---------- Projects ---------- */
 
-  function patchProject(id: string, patch: Partial<Project>) {
+  /* A patch may mix the project's own fields with this person's opinion of it,
+     so it is split rather than pushed at one table and hoped for. Which side a
+     key falls on is decided by lib/personal.ts — the same list the pages merge
+     with, so the boundary is stated once instead of guessed at twice. */
+  function patchProject(id: string, patch: Partial<BoardProject>) {
     const before = projects;
+    const shared: Record<string, unknown> = {};
+    const mine: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(patch)) {
+      (isPersonalField(k) ? mine : shared)[k] = val;
+    }
+
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-    void persist(supabase.from('projects').update(patch).eq('id', id),
-      { message: RETRY, onError: () => setProjects(before) });
+
+    if (Object.keys(shared).length) {
+      void persist(supabase.from('projects').update(shared).eq('id', id),
+        { message: RETRY, onError: () => setProjects(before) });
+    }
+    if (Object.keys(mine).length) {
+      void persist(
+        supabase.from('project_members').update(mine).eq('project_id', id).eq('user_id', userId),
+        { message: RETRY, onError: () => setProjects(before) }
+      );
+    }
   }
 
   function deleteProject(id: string) {
@@ -123,7 +146,7 @@ export function useProjectsStore(
    * header reads for its tabs — in step with what the page displays. Only the
    * rows that actually changed are written.
    */
-  function writeProjectOrder(ordered: Project[]) {
+  function writeProjectOrder(ordered: BoardProject[]) {
     const before = projects;
     const renumbered = ordered.map((p, i) => ({ ...p, position: i }));
     const byId = new Map(before.map((p) => [p.id, p] as const));
@@ -133,12 +156,20 @@ export function useProjectsStore(
     });
     if (!changed.length) return;
     setProjects(renumbered);
-    void persist(
-      supabase.from('projects').upsert(
-        changed.map((p) => ({ id: p.id, name: p.name, position: p.position, group_id: p.group_id, favorite: p.favorite }))
-      ),
-      { message: 'Could not save the new order — try again.', onError: () => setProjects(before) }
-    );
+
+    /* All three of these are personal, so the whole write lands on the
+       membership. One statement per project rather than an upsert: upserting
+       project_members would need its primary key (project_id, user_id) and,
+       more to the point, `authenticated` has no INSERT on that table at all —
+       an upsert that missed would try to insert and be refused. */
+    for (const p of changed) {
+      void persist(
+        supabase.from('project_members')
+          .update({ position: p.position, group_id: p.group_id, favorite: p.favorite })
+          .eq('project_id', p.id).eq('user_id', userId),
+        { message: 'Could not save the new order — try again.', onError: () => setProjects(before) }
+      );
+    }
   }
 
   return {

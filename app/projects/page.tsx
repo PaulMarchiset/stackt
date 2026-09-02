@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { DEMO_USER, demoData } from '@/lib/demo/fixture';
 import { isDemo } from '@/lib/demo/server';
 import type { Project, ProjectGroup } from '@/lib/types';
+import { withPersonal, type MembershipRow } from '@/lib/personal';
 import ProjectsHome, { type CardLite } from './ProjectsHome';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ export default async function ProjectsPage() {
         initialProjects={d.projects}
         cards={d.cards.map(({ id, project_id, type, done }) => ({ id, project_id, type, done }))}
         groups={d.groups}
+        userId={DEMO_USER.id}
         userEmail={DEMO_USER.email}
         userName={DEMO_USER.name}
       />
@@ -32,17 +34,24 @@ export default async function ProjectsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const [{ data: projects }, { data: cards }, { data: groups }] = await Promise.all([
-    supabase.from('projects').select('*').order('position').order('created_at'),
+  const [{ data: projects }, { data: cards }, { data: groups }, { data: members }] = await Promise.all([
+    supabase.from('projects').select('*').order('created_at'),
     supabase.from('cards').select('id, project_id, type, done'),
-    supabase.from('project_groups').select('*').order('position')
+    supabase.from('project_groups').select('*').order('position'),
+    supabase.from('project_members')
+      .select('project_id, favorite, position, group_id').eq('user_id', user.id)
   ]);
+
+  /* Favourite, order and band are personal, so they come off this user's
+     membership rather than the shared project row (lib/personal.ts). */
+  const merged = withPersonal((projects ?? []) as Project[], (members ?? []) as MembershipRow[]);
 
   return (
     <ProjectsHome
-      initialProjects={(projects ?? []) as Project[]}
+      initialProjects={merged}
       cards={(cards ?? []) as CardLite[]}
       groups={(groups ?? []) as ProjectGroup[]}
+      userId={user.id}
       userEmail={user.email ?? ''}
       userName={(user.user_metadata?.username as string) ?? ''}
     />

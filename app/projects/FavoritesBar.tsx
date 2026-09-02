@@ -1,6 +1,6 @@
 'use client';
 
-import type { Project } from '@/lib/types';
+import type { BoardProject } from '@/lib/types';
 import { versionTheme } from '@/lib/util';
 import { IconStar } from '@/app/components/icons';
 import { initials } from './ProjectCard';
@@ -24,7 +24,7 @@ import { initials } from './ProjectCard';
 export default function FavoritesBar({
   projects, onUnfavorite
 }: {
-  projects: Project[];
+  projects: BoardProject[];
   onUnfavorite: (id: string) => void;
 }) {
   if (projects.length === 0) return null;

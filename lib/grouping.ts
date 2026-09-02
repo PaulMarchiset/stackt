@@ -1,4 +1,4 @@
-import type { HeaderItem, Project, ProjectGroup } from './types';
+import type { HeaderItem, BoardProject, ProjectGroup } from './types';
 import { versionColor } from './util';
 
 /**
@@ -44,7 +44,7 @@ export interface ProjectIsland {
      entry's position; this doesn't, which is what a preference about the island
      (whether it is folded) has to hang on. */
   groupId: string | null;
-  projects: Project[];
+  projects: BoardProject[];
 }
 
 /**
@@ -65,7 +65,7 @@ export interface ProjectIsland {
  */
 export function headerIslands(
   items: HeaderItem[],
-  projects: Project[],
+  projects: BoardProject[],
   groups: ProjectGroup[],
   activeId: string | null
 ): ProjectIsland[] {
@@ -75,7 +75,7 @@ export function headerIslands(
   return withActive(islands, projects, activeId);
 }
 
-const all = (projects: Project[]): ProjectIsland =>
+const all = (projects: BoardProject[]): ProjectIsland =>
   ({ key: 'all', label: null, colorIndex: null, groupId: null, projects });
 
 /**
@@ -93,7 +93,7 @@ export interface HeaderEntry {
   colorIndex: number | null;
   /* Everything this entry still brings once earlier entries have taken theirs.
      Empty means it draws nothing: it is empty, stale, or already covered. */
-  projects: Project[];
+  projects: BoardProject[];
   /* The group or project it names is gone. */
   missing: boolean;
 }
@@ -107,11 +107,11 @@ export interface HeaderEntry {
  * them) read the same result, so what you are shown while choosing is what the
  * header will draw.
  */
-export function resolveHeader(items: HeaderItem[], projects: Project[], groups: ProjectGroup[]): HeaderEntry[] {
+export function resolveHeader(items: HeaderItem[], projects: BoardProject[], groups: ProjectGroup[]): HeaderEntry[] {
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
   const groupById = new Map(groups.map((g) => [g.id, g] as const));
   const taken = new Set<string>();
-  const claim = (list: Project[]) => {
+  const claim = (list: BoardProject[]) => {
     const mine = list.filter((p) => !taken.has(p.id));
     mine.forEach((p) => taken.add(p.id));
     return mine;
@@ -164,7 +164,7 @@ function coalesce(entries: HeaderEntry[]): ProjectIsland[] {
 }
 
 /* Rule 2: make sure whatever board is open has a tab. */
-function withActive(islands: ProjectIsland[], projects: Project[], activeId: string | null): ProjectIsland[] {
+function withActive(islands: ProjectIsland[], projects: BoardProject[], activeId: string | null): ProjectIsland[] {
   if (!activeId || islands.some((i) => i.projects.some((p) => p.id === activeId))) return islands;
   const active = projects.find((p) => p.id === activeId);
   if (!active) return islands;
@@ -232,7 +232,7 @@ export interface ProjectSection {
   group: ProjectGroup | null;
   label: string;
   colorIndex: number | null;
-  projects: Project[];
+  projects: BoardProject[];
 }
 
 /**
@@ -247,7 +247,7 @@ export interface ProjectSection {
  * itself, and — since order is one global sequence — reordering either copy
  * silently reorders the other.
  */
-export function projectSections(projects: Project[], groups: ProjectGroup[]): ProjectSection[] {
+export function projectSections(projects: BoardProject[], groups: ProjectGroup[]): ProjectSection[] {
   const known = new Set(groups.map((g) => g.id));
   const sections: ProjectSection[] = [];
   for (const g of sortGroups(groups)) {
@@ -283,17 +283,17 @@ export function projectSections(projects: Project[], groups: ProjectGroup[]): Pr
  * no neighbours to anchor to and goes last, where it is the only thing anyway.
  */
 export function applyProjectDrop(
-  projects: Project[],
+  projects: BoardProject[],
   sections: ProjectSection[],
   draggedId: string,
   sectionKey: string,
   index: number
-): Project[] {
+): BoardProject[] {
   const dragged = projects.find((p) => p.id === draggedId);
   const section = sections.find((s) => s.key === sectionKey);
   if (!dragged || !section) return projects;
 
-  const moved: Project = {
+  const moved: BoardProject = {
     ...dragged,
     group_id: section.kind === 'group' ? (section.group?.id ?? null) : null
   };
@@ -317,4 +317,4 @@ export function applyProjectDrop(
  * chips you click to jump, with no drop target and no order of its own, so it
  * cannot restate the bands underneath it or fight them over `position`.
  */
-export const favoriteProjects = (projects: Project[]): Project[] => projects.filter((p) => p.favorite);
+export const favoriteProjects = (projects: BoardProject[]): BoardProject[] => projects.filter((p) => p.favorite);

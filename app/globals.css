@@ -30,9 +30,19 @@
   --radius-sm: 16px;
   --radius-xs: 11px;
 
-  --display: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --sans: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: var(--font-mono), ui-monospace, 'SF Mono', monospace;
+  /* --font-cjk sits after the Latin face in every stack, never in front of it.
+     Browsers fall back family by family for each GLYPH, so Latin text keeps
+     using Plus Jakarta Sans and only the characters it has no drawing for —
+     Japanese, Chinese, Korean — reach Noto Sans JP. Putting it first would
+     silently restyle the whole app in a face chosen for kanji.
+
+     In --mono it costs the alignment: Noto Sans JP is proportional, so a column
+     of CJK will not line up the way Latin does. The fix would be a CJK
+     monospace, which is several times the weight for a case that barely comes
+     up — a branch name in kanji. Legible and misaligned beats absent. */
+  --display: var(--font-sans), var(--font-cjk), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sans: var(--font-sans), var(--font-cjk), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: var(--font-mono), var(--font-cjk), ui-monospace, 'SF Mono', monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   --col-todo: #E4E3FB; --col-todo-dot: #5B5BE6;
@@ -883,7 +893,16 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
 /* ---------- What's new popup ----------
    A list you can read at a glance on the way past, not a release note. */
 .whatsnew-modal { width: 440px; max-width: calc(100vw - 32px); }
-.whatsnew-intro { font-size: 13px; color: var(--ink-soft); margin: 0 0 12px; }
+/* The intro used to be a one-line lead-in above a list. It is now the release
+   note itself, so it is set to be read: a line-height that holds for three
+   paragraphs, and no trailing margin fighting the actions row below. */
+.whatsnew-intro { font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin: 0 0 11px; }
+/* Both scoped with `>` and `:last-child` on purpose. The capsule's own text is
+   made of .whatsnew-intro paragraphs too, so a bare `:first-of-type` darkened
+   its lead-in as well, and `:last-of-type` zeroed the margin on the paragraph
+   sitting immediately ABOVE the capsule — closing the gap in front of it. */
+.whatsnew > .whatsnew-intro:first-of-type { color: var(--ink); }
+.whatsnew-intro:last-child { margin-bottom: 0; }
 .whatsnew-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .whatsnew-list li { position: relative; padding-left: 17px; font-size: 13px; line-height: 1.45; color: var(--ink); }
 .whatsnew-list li::before { content: ''; position: absolute; left: 3px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -999,6 +1018,16 @@ button.isle-label:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--acc
 .set-desc { font-size: 13px; line-height: 1.55; color: var(--ink-soft); max-width: 62ch; margin: 6px 0 0; }
 .set-badge { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: #8A6300; background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
 .set-confirm { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Ownership handover, shown inside the delete-account confirmation when this
+   account is the last owner of a project other people are on. Full width under
+   the row rather than beside the buttons: it is a decision, not a control. */
+.set-handover { margin: 14px 0 16px; padding: 14px 16px; background: #FBFAF6; border: 1.5px solid var(--border); border-radius: var(--radius-xs); }
+.set-handover > .set-desc { margin: 0 0 12px; }
+.set-handover-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.set-handover-name { flex: 1 1 160px; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-handover-row .set-input { flex: 1 1 220px; width: auto; }
+.set-handover .set-hint { margin-top: 10px; }
 .set-warn { margin-bottom: 14px; padding: 11px 14px; border-radius: var(--radius-xs); background: var(--danger-soft); color: #8A2E30; font-size: 12.5px; line-height: 1.5; }
 .set-warn code { font-family: var(--mono); font-size: 11.5px; }
 
@@ -1804,4 +1833,86 @@ input.band-tag:focus {
 @media (prefers-reduced-motion: reduce) {
   .hero-logo .bar { animation: none; }
   .hero-word { animation: none; opacity: 1; }
+}
+
+/* ---------- Sharing panel (app/board/MembersPanel.tsx) ---------- */
+/* Rows are email-left / controls-right, and the email is the part allowed to
+   shrink: an address that wraps is still readable, a Remove button that wraps
+   under its own row is not. */
+.members { display: flex; flex-direction: column; gap: 14px; }
+.members-invite { display: flex; gap: 8px; align-items: center; }
+.members-invite .set-input { flex: 1 1 auto; }
+.members-invite .btn { flex: 0 0 auto; white-space: nowrap; }
+
+.members-note { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
+.members-note.bad { color: #B4282C; }
+
+.members-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.members-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: var(--radius-xs);
+  background: #FBFAF6; border: 1.5px solid var(--border);
+}
+.members-row.pending { background: transparent; border-style: dashed; }
+.members-who { display: flex; align-items: baseline; gap: 8px; flex: 1 1 160px; min-width: 0; }
+.members-email { font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.members-you {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-mute); background: var(--surface); padding: 2px 6px; border-radius: 5px; flex: 0 0 auto;
+}
+.members-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.members-role { width: auto; padding: 6px 9px; font-size: 12.5px; }
+.members-role-fixed { font-size: 12.5px; color: var(--ink-mute); }
+.members-remove { padding: 6px 10px; font-size: 12.5px; }
+
+/* ---------- "What's new": the gesture, drawn rather than described --------- */
+/* A replica of the real invite row, not a screenshot: it reads the same tokens
+   as the panel it depicts, so it cannot drift out of date the way an image
+   would. Inert throughout — a live field here would be a second, wronger place
+   to invite from, pointed at whichever board happens to be behind the popup. */
+.whatsnew-capsule { margin: 0; }
+/* Built like every other card in the app — surface, radius, shadow, and no
+   border, because nothing here has one. Lifting it onto its own card is what
+   stops it reading as a live form: loose on the page, a field with a button
+   beside it IS a form and someone types in it. */
+.whatsnew-capsule-card {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm); padding: 12px;
+  margin: 11px 0;
+}
+/* The trailing note. Same eyebrow the settings page uses for its sections —
+   mono, spaced caps, and a hairline that runs out to the edge. The rule is a
+   background on a pseudo-element, not a border, which is how every division in
+   this app is drawn. */
+.whatsnew-aside { margin-top: 20px; }
+.whatsnew-aside-label {
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-mute); margin-bottom: 10px;
+}
+.whatsnew-aside-label::after {
+  content: ""; flex: 1; height: 1px; background: rgba(26, 26, 24, 0.07);
+}
+
+/* A miniature of the real button, sized to sit in a sentence. */
+.whatsnew-chip {
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: -1px;
+  font-weight: 700; color: var(--ink);
+}
+.whatsnew-chip svg {
+  width: 12px; height: 12px; flex-shrink: 0; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+/* White, not the input's usual #FBFAF6: it now sits on the frame's tinted
+   ground, and the real field's near-white would disappear into it. */
+.whatsnew-capsule-field {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; color: var(--ink-mute); background: #FFFFFF;
+  border: 1.5px solid var(--border); border-radius: var(--radius-xs); padding: 9px 12px;
+}
+.whatsnew-capsule-btn {
+  flex: 0 0 auto; font-size: 12.5px; font-weight: 700; color: var(--ink);
+  background: var(--accent); padding: 9px 16px; border-radius: 9999px;
+  box-shadow: var(--shadow-sm);
 }

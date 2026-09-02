@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Card, TimelineViewProps, Version } from '@/lib/types';
-import { todayISO, versionColor } from '@/lib/util';
+import { DATE_LOCALE, todayISO, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
@@ -127,7 +127,7 @@ export default function Timeline({
     const d = fromIso(b.dropIso);
     return scale === 'month'
       ? String(d.getFullYear())
-      : d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      : d.toLocaleDateString(DATE_LOCALE, { month: 'long', year: 'numeric' });
   };
 
   const undated = cards.filter((c) => !c.target_date);
@@ -242,17 +242,17 @@ export default function Timeline({
     if (scale === 'week') {
       const m = fromIso(bucket.key);
       const sun = new Date(m); sun.setDate(sun.getDate() + 6);
-      dow2 = m.toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
+      dow2 = m.toLocaleDateString(DATE_LOCALE, { month: 'short' }).toUpperCase();
       dnum = `${m.getDate()}–${sun.getDate()}`;
     } else if (scale === 'month') {
       const m = fromIso(`${bucket.key}-01`);
       dow2 = String(m.getFullYear());
-      dnum = m.toLocaleDateString(undefined, { month: 'short' });
+      dnum = m.toLocaleDateString(DATE_LOCALE, { month: 'short' });
     } else {
       const d = fromIso(bucket.dropIso);
-      dow2 = d.toLocaleDateString(undefined, { weekday: 'short' });
+      dow2 = d.toLocaleDateString(DATE_LOCALE, { weekday: 'short' });
       dnum = String(d.getDate());
-      if (d.getDate() === 1 || bucket.dropIso === days[0]) mon = d.toLocaleDateString(undefined, { month: 'short' });
+      if (d.getDate() === 1 || bucket.dropIso === days[0]) mon = d.toLocaleDateString(DATE_LOCALE, { month: 'short' });
     }
     /* The milestone rides in the header, immediately right of the day number:
        a ship date is a property of that day, so it belongs where the day is

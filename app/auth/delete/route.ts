@@ -1,17 +1,28 @@
 import { NextResponse } from 'next/server';
-import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { isSameOrigin } from '@/lib/sameOrigin';
 import { createClient } from '@/lib/supabase/server';
 
 /**
  * Deletes the signed-in user's account and all their data, then signs them out.
  *
- * Data (projects + cards) is removed through the user's own session, so
- * row-level security guarantees we only ever touch their rows. The auth record
- * itself can only be removed with the service-role key, which is server-only and
- * must never reach the browser — set SUPABASE_SERVICE_ROLE_KEY in the server
- * environment for the account row to be deleted too (data is deleted regardless).
+ * Everything runs on the user's own session. The auth record goes through
+ * public.delete_own_account() (migration 0009), a security-definer function
+ * that reads auth.uid() itself — so this route no longer touches the
+ * service-role key, which bypassed row-level security across every user.
+ *
+ * Deleting the auth row cascades to projects, versions, cards, groups and
+ * preferences. The explicit deletes below are the fallback for when the
+ * function is unavailable (migration not run yet): they are RLS-scoped, so the
+ * personal data still goes even when the login record can't, and the user is
+ * told rather than sent home as if it had all worked.
  */
 export async function POST(request: Request) {
+  // Deleting an account is exactly the request you don't want another site to
+  // be able to make on a user's behalf (see lib/sameOrigin.ts).
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const supabase = createClient();
   const {
     data: { user }
@@ -21,27 +32,29 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL('/login', request.url), { status: 303 });
   }
 
-  // 1. Delete the user's own data (RLS-scoped). Cards first (they reference projects).
+  // 1. The whole account, in one call. Cascades take care of the rest.
+  const { error } = await supabase.rpc('delete_own_account');
+
+  if (!error) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(new URL('/', request.url), { status: 303 });
+  }
+
+  /* 2. Fallback — the function is missing or refused. Delete what the session
+        is allowed to delete, so the content goes even if the login lingers.
+        Order matters: children before parents. `versions` is absent on purpose,
+        it has no user_id and cascades from projects. */
+  console.error('delete_own_account failed, falling back to row deletes:', error.message);
+
   const { data: projects } = await supabase.from('projects').select('id');
   const ids = (projects ?? []).map((p) => p.id);
   if (ids.length) {
     await supabase.from('cards').delete().in('project_id', ids);
     await supabase.from('projects').delete().in('id', ids);
   }
+  await supabase.from('project_groups').delete().eq('user_id', user.id);
+  await supabase.from('user_prefs').delete().eq('user_id', user.id);
+  await supabase.from('email_prefs').delete().eq('user_id', user.id);
 
-  // 2. Delete the auth user (needs the service-role key).
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (serviceKey) {
-    const admin = createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-    const { error } = await admin.auth.admin.deleteUser(user.id);
-    if (error) console.error('deleteUser error:', error);
-  } else {
-    console.error('SUPABASE_SERVICE_ROLE_KEY is not set — user data deleted, but the auth record remains.');
-  }
-
-  // 3. Clear the session and send them home.
-  await supabase.auth.signOut();
-  return NextResponse.redirect(new URL('/', request.url), { status: 303 });
+  return NextResponse.redirect(new URL('/settings?deleted=partial', request.url), { status: 303 });
 }

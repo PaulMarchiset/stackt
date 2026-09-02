@@ -1,4 +1,4 @@
-import type { Card, HeaderItem, Project, ProjectGroup, Version } from '@/lib/types';
+import type { Card, HeaderItem, BoardProject, ProjectGroup, Version } from '@/lib/types';
 
 /**
  * The board a screenshot should find.
@@ -55,7 +55,7 @@ const GROUPS: ProjectGroup[] = [
 ];
 
 /* ---------- projects ---------- */
-const PROJECTS: Project[] = [
+const PROJECTS: BoardProject[] = [
   {
     id: 'demo-stackt', name: 'Stackt', active_version_id: 'demo-v-110',
     group_id: 'demo-g-side', favorite: true,
@@ -227,7 +227,7 @@ const CARDS: Card[] = [
 const HEADER_ITEMS: HeaderItem[] = [{ kind: 'favorites' }, { kind: 'group', id: 'demo-g-client' }];
 
 export interface DemoData {
-  projects: Project[];
+  projects: BoardProject[];
   groups: ProjectGroup[];
   versions: Version[];
   cards: Card[];

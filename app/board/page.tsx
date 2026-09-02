@@ -5,6 +5,7 @@ import { DEMO_USER, demoData } from '@/lib/demo/fixture';
 import { isDemo } from '@/lib/demo/server';
 import { DEFAULT_USER_PREFS, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
 import { parseHeaderItems } from '@/lib/grouping';
+import { withPersonal, type MembershipRow } from '@/lib/personal';
 import BoardApp from './BoardApp';
 
 export const dynamic = 'force-dynamic';
@@ -41,13 +42,22 @@ export default async function BoardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const [{ data: projects }, { data: cards }, { data: versions }, { data: groups }, { data: prefs }] = await Promise.all([
-    supabase.from('projects').select('*').order('position').order('created_at'),
+  const [{ data: projects }, { data: cards }, { data: versions }, { data: groups }, { data: prefs }, { data: members }] = await Promise.all([
+    supabase.from('projects').select('*').order('created_at'),
     supabase.from('cards').select('*').order('created_at'),
     supabase.from('versions').select('*').order('position'),
     supabase.from('project_groups').select('*').order('position'),
-    supabase.from('user_prefs').select('header_items').eq('user_id', user.id).maybeSingle()
+    supabase.from('user_prefs').select('header_items').eq('user_id', user.id).maybeSingle(),
+    /* Scoped to this user: on a shared project the table also holds the other
+       members' rows, and their reminder choice is not ours to read. */
+    supabase.from('project_members')
+      .select('project_id, remind, favorite, position, group_id').eq('user_id', user.id)
   ]);
+
+  /* The reader's own settings, merged onto the shared rows (lib/personal.ts).
+     Components go on reading project.remind / .favorite and never learn where
+     the values came from; the writes route back through the store. */
+  const withRemind = withPersonal((projects ?? []) as Project[], (members ?? []) as MembershipRow[]);
 
   /* No row means "never chose anything" — the defaults. An existing row with an
      empty list means the opposite: you took everything out on purpose, and the
@@ -59,7 +69,7 @@ export default async function BoardPage({
 
   return (
     <BoardApp
-      initialProjects={(projects ?? []) as Project[]}
+      initialProjects={withRemind}
       initialCards={(cards ?? []) as Card[]}
       initialVersions={(versions ?? []) as Version[]}
       groups={(groups ?? []) as ProjectGroup[]}

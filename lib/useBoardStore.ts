@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { createDemoClient } from '@/lib/demo/db';
-import type { Card, CardDraft, EditTarget, Project, Status, Version } from '@/lib/types';
+import type { Card, CardDraft, EditTarget, BoardProject, Status, Version } from '@/lib/types';
 import type { ImportBlock } from '@/lib/importText';
 import { usePersist } from '@/lib/usePersist';
 import { useToast } from '@/lib/useToast';
@@ -24,19 +24,96 @@ import { useToast } from '@/lib/useToast';
  * (lib/demo/db.ts): the board stays fully usable with no account behind it.
  */
 export function useBoardStore(
-  initialProjects: Project[], initialCards: Card[], initialVersions: Version[], demo = false
+  initialProjects: BoardProject[], initialCards: Card[], initialVersions: Version[],
+  userId: string, demo = false
 ) {
   const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<BoardProject[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [versions, setVersions] = useState<Version[]>(initialVersions);
   const { toast, showToast } = useToast();
   const { saving, persist, persistRow } = usePersist(showToast);
 
+  /* ---------- Live updates from other people ---------- */
+
+  /* The card currently open in the editor, if any. Remote changes to it are
+     dropped rather than applied: a collaborator saving the same card while you
+     are typing in it would otherwise replace your unsaved text mid-sentence.
+     Losing their edit on screen is recoverable — they saved it, it is in the
+     database, and the next resync shows it. Losing yours is not. */
+  const heldCard = useRef<string | null>(null);
+  function holdCard(id: string | null) { heldCard.current = id; }
+
+  /* Merge one row that arrived over the wire.
+     Idempotent on purpose: your own writes come back to you as events too, and
+     the cheapest correct answer to an echo is a merge that produces the same
+     state twice. `updated_at` decides who wins — the row that reaches us is the
+     one the database committed, so it is newer than anything we hold except a
+     local edit we have not sent yet, which is what heldCard protects. */
+  function applyRemote(e: { table: 'cards' | 'versions'; type: string; row: Record<string, unknown> }) {
+    const id = e.row.id as string | undefined;
+    if (!id) return;
+
+    if (e.table === 'cards') {
+      if (e.type === 'DELETE') {
+        setCards((cs) => cs.filter((c) => c.id !== id));
+        return;
+      }
+      if (heldCard.current === id) return;
+      const row = e.row as unknown as Card;
+      setCards((cs) => (cs.some((c) => c.id === id)
+        ? cs.map((c) => (c.id === id ? { ...c, ...row } : c))
+        : [...cs, row]));
+      return;
+    }
+
+    if (e.type === 'DELETE') {
+      setVersions((vs) => vs.filter((z) => z.id !== id));
+      return;
+    }
+    const row = e.row as unknown as Version;
+    setVersions((vs) => (vs.some((z) => z.id === id)
+      ? vs.map((z) => (z.id === id ? { ...z, ...row } : z))
+      : [...vs, row]));
+  }
+
+  /* Everything again, for this project only. Called after any gap in the
+     stream — a dropped socket, a tab that was asleep — where events happened
+     that nobody delivered. Rows for other projects are left alone, so switching
+     tabs does not throw away what is already loaded. */
+  async function resyncProject(projectId: string) {
+    const [{ data: freshCards }, { data: freshVersions }] = await Promise.all([
+      supabase.from('cards').select('*').eq('project_id', projectId),
+      supabase.from('versions').select('*').eq('project_id', projectId)
+    ]);
+    if (freshCards) {
+      setCards((cs) => [...cs.filter((c) => c.project_id !== projectId), ...(freshCards as Card[])]);
+    }
+    if (freshVersions) {
+      setVersions((vs) => [...vs.filter((z) => z.project_id !== projectId), ...(freshVersions as Version[])]);
+    }
+  }
+
   /* ---------- Projects ---------- */
-  function patchProject(id: string, patch: Partial<Project>) {
+  function patchProject(id: string, patch: Partial<BoardProject>) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
     void persist(supabase.from('projects').update(patch).eq('id', id));
+  }
+
+  /* Reminders are per-member, so this one field is written to the membership
+     row rather than to the project — the project is shared, the opinion isn't.
+     It still reads off BoardProject.remind, which the page merges in from the
+     membership, so every component keeps the shape it already had. */
+  function setRemind(id: string, next: boolean) {
+    setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: next } : p)));
+    void persist(
+      supabase.from('project_members').update({ remind: next })
+        .eq('project_id', id).eq('user_id', userId),
+      {
+        message: 'Could not change that reminder — try again.',
+        onError: () => setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)))
+      }
+    );
   }
 
   /* Local-only reorder while a drag is in flight — nothing is written yet. */
@@ -58,7 +135,13 @@ export function useBoardStore(
     const arr = projectsRef.current;
     let dirty = false;
     arr.forEach((p, i) => {
-      if (p.position !== i) { dirty = true; void persist(supabase.from('projects').update({ position: i }).eq('id', p.id)); }
+      /* Onto the membership, like the projects page: the tab order is this
+         person's arrangement of a board others may also be on. */
+      if (p.position !== i) {
+        dirty = true;
+        void persist(supabase.from('project_members').update({ position: i })
+          .eq('project_id', p.id).eq('user_id', userId));
+      }
     });
     if (dirty) setProjects((ps) => ps.map((p) => {
       const i = arr.findIndex((x) => x.id === p.id);
@@ -154,7 +237,7 @@ export function useBoardStore(
   }
 
   /* Delete a version: its cards are kept (the FK sets their version_id → null). */
-  function deleteVersion(project: Project, id: string) {
+  function deleteVersion(project: BoardProject, id: string) {
     setCards((cs) => cs.map((c) => (c.version_id === id ? { ...c, version_id: null } : c)));
     setVersions((vs) => vs.filter((z) => z.id !== id));
     if (project.active_version_id === id) patchProject(project.id, { active_version_id: null });
@@ -164,7 +247,7 @@ export function useBoardStore(
   /* Fold `fromId` into `toId`: its cards move onto the target, then the emptied
      version is deleted. The active version follows the cards, so a board whose
      selected version just disappeared lands on the one that absorbed it. */
-  function mergeVersion(project: Project, fromId: string, toId: string) {
+  function mergeVersion(project: BoardProject, fromId: string, toId: string) {
     if (fromId === toId) return;
     setCards((cs) => cs.map((c) => (c.version_id === fromId ? { ...c, version_id: toId } : c)));
     void persist(supabase.from('cards').update({ version_id: toId }).eq('version_id', fromId));
@@ -177,7 +260,7 @@ export function useBoardStore(
      from the rename field — the alternative is refusing the edit or writing a
      duplicate the unique (project_id, name) would reject anyway. It delegates,
      so "merge" has one implementation whichever way you reach it. */
-  function renameVersion(project: Project, id: string, raw: string) {
+  function renameVersion(project: BoardProject, id: string, raw: string) {
     const ver = versions.find((z) => z.id === id);
     const newV = raw.trim();
     if (!ver || !newV || newV === ver.name) return;
@@ -201,7 +284,7 @@ export function useBoardStore(
   /* Complete / reopen a version. `completed_at` is stamped on the way in and
      cleared on the way out, so the version bar can list completed versions
      newest-first. Completing also closes whatever is left inside it. */
-  function toggleVersionCompleted(project: Project, id: string) {
+  function toggleVersionCompleted(project: BoardProject, id: string) {
     const ver = versions.find((z) => z.id === id);
     if (!ver) return;
     const completed = !ver.completed;
@@ -257,7 +340,8 @@ export function useBoardStore(
   return {
     projects, cards, versions, saving, toast, showToast,
     setProjects,   // local-only edits (the project-name input types before it saves)
-    patchProject, moveProjectBefore, commitProjectOrder,
+    patchProject, setRemind, moveProjectBefore, commitProjectOrder,
+    supabase, applyRemote, resyncProject, holdCard,
     addCard, patchCard, deleteCard, moveCard, toggleDone, rescheduleCard, submitCard, importBlocks,
     ensureVersion, renameVersion, mergeVersion, deleteVersion, setVersionColor, setVersionShipDate, toggleVersionCompleted
   };

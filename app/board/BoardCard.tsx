@@ -1,6 +1,6 @@
 'use client';
 
-import type { Card, Project, Version } from '@/lib/types';
+import type { Card, BoardProject, Version } from '@/lib/types';
 import { versionColor } from '@/lib/util';
 import { vocab } from '@/lib/labels';
 import { useBoardDevMode } from '@/lib/devModeContext';
@@ -20,7 +20,7 @@ export default function BoardCard({
 }: {
   card: Card;
   version: Version | null;
-  project: Project;
+  project: BoardProject;
   index: number;
   justMoved: boolean;
   isMobile: boolean;

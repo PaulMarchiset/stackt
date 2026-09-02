@@ -1,7 +1,10 @@
 import type { Card, Project, EmailPrefs, EmailSection, Version } from '@/lib/types';
 
 export interface DigestInput {
-  projects: Project[]; // only the user's reminder-enabled projects
+  /* Ids only. Reminders became per-member with the collaborative work, so
+     "your reminder projects" is a set this reader opted into, not a set they
+     own — and since the digest reports counts, the names are never read. */
+  projectIds: string[];
   cards: Card[];       // cards belonging to those projects
   versions?: Version[]; // versions of those projects — only ship dates are read
   prefs: EmailPrefs;
@@ -40,6 +43,32 @@ export function formatDigestDate(iso: string): string {
    preview can show the very same default instead of duplicating the wording. */
 export function defaultSubject(today: string): string {
   return `Stackt reminder — ${formatDigestDate(today)}`;
+}
+
+/* The placeholders a custom subject may use, in the order the settings screen
+   lists them. Only counts and the date: the same rule the body follows, so a
+   subject can't smuggle out what the digest deliberately leaves behind. */
+export const SUBJECT_TOKENS = ['date', 'total', 'overdue', 'today', 'milestones'] as const;
+export type SubjectToken = (typeof SUBJECT_TOKENS)[number];
+
+/* Substitute {token} in a user-written subject. An unknown token is left as
+   typed rather than blanked — a literal "{foo}" in the inbox tells the user
+   they got the name wrong, an empty gap doesn't.
+
+   Newlines are stripped: the value ends up in a mail header, and a subject
+   that can carry CR/LF is a header-injection primitive waiting for a provider
+   that concatenates instead of encoding. */
+export function expandSubject(
+  raw: string | null | undefined,
+  values: Record<SubjectToken, string>,
+  today: string
+): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return defaultSubject(today);
+  const expanded = trimmed.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    (SUBJECT_TOKENS as readonly string[]).includes(name) ? values[name as SubjectToken] : whole
+  );
+  return expanded.replace(/[\r\n]+/g, ' ').trim() || defaultSubject(today);
 }
 
 /* Escape user-supplied text before dropping it into HTML. */
@@ -95,167 +124,77 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
 }
 
-/* The urgency line under a task: how late it is, or how soon it lands. This is
-   what makes the list scannable — a date alone forces the reader to do the
-   arithmetic themselves. Empty for undated cards: the section already says so,
-   and the row renders without a second line. */
-function timingLabel(card: Card, today: string, bucket: EmailSection): string {
-  if (!card.target_date) return '';
-  const date = formatDigestDate(card.target_date);
-  const diff = daysBetween(today, card.target_date);
-  if (bucket === 'today') return `Due today · ${date}`;
-  if (diff < 0) return `${date} · ${diff === -1 ? '1 day' : `${-diff} days`} late`;
-  if (diff === 1) return `${date} · tomorrow`;
-  return `${date} · in ${diff} days`;
+/* ---------------------------------------------------------------------------
+   Rendering — counts, never content.
+   ---------------------------------------------------------------------------
+   This digest deliberately carries no task title, no project name and no
+   version name. Reason: the mail leaves our infrastructure. It sits in a
+   mailbox for years, gets indexed by the provider, shows up on a lock screen,
+   and passes through a third-party sender (Brevo) that keeps it in its logs.
+   A count tells you to open the board; a title tells everyone else what you
+   are working on. Only the first of those is worth the exposure.
+
+   Dates are the one exception, and they earn it: "3 overdue, oldest 12th
+   August" is genuinely actionable and reveals nothing about the work itself.
+   --------------------------------------------------------------------------- */
+
+/* The date hint beside a count. Nothing for 'today' (the label already says
+   it) and nothing for 'undated' (there is no date to speak of). */
+function sectionHint(bucket: EmailSection, dates: string[], today: string): string {
+  if (bucket === 'today' || bucket === 'undated' || dates.length === 0) return '';
+  const sorted = [...dates].sort();
+
+  if (bucket === 'overdue') {
+    const oldest = sorted[0];
+    const late = -daysBetween(today, oldest);
+    return `oldest ${formatDigestDate(oldest)} · ${late === 1 ? '1 day' : `${late} days`} late`;
+  }
+
+  // 'upcoming' and 'milestones' both look forward — the nearest one leads.
+  const nearest = sorted[0];
+  const diff = daysBetween(today, nearest);
+  if (diff === 0) return `next today`;
+  if (diff === 1) return `next tomorrow`;
+  return `next in ${diff} days`;
 }
 
-/* One task: title on its own line, the timing beneath it. The project isn't
-   repeated here — it heads the group this row sits in. The title is the only
-   emphasised text in the row; everything else leans on size and colour. */
-function renderCardRow(card: Card, today: string, bucket: EmailSection, first: boolean): string {
+/* One line: a coloured dot, the bucket's name, an optional date hint, and the
+   count hard right. Every row shares the same grid so the numbers line up. */
+function renderCountRow(bucket: EmailSection, count: number, hint: string, first: boolean): string {
   const t = SECTION_THEME[bucket];
-  const timing = timingLabel(card, today, bucket);
-  const meta = timing
-    ? `<div style="margin-top:3px;font-family:${FONT};font-size:11.5px;font-weight:400;line-height:1.5;color:${t.ink};">${esc(timing)}</div>`
+  const hintCell = hint
+    ? `<div style="margin-top:2px;font-family:${FONT};font-size:11.5px;font-weight:400;line-height:1.45;color:${t.ink};">${esc(hint)}</div>`
     : '';
   return `<tr>
-    <td style="padding:${first ? '0' : '9px'} 0 0 0;font-family:${FONT};">
-      <div style="font-family:${FONT};font-size:14.5px;font-weight:400;line-height:1.4;color:#1B1A17;">${esc(card.title || 'Untitled')}</div>
-      ${meta}
+    <td style="padding:${first ? '0' : '14px'} 0 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="16" style="vertical-align:top;padding-top:6px;">
+            <div style="width:8px;height:8px;background:${t.accent};border-radius:9999px;font-size:0;line-height:0;">&nbsp;</div>
+          </td>
+          <td style="vertical-align:top;font-family:${FONT};">
+            <div style="font-family:${FONT};font-size:14.5px;font-weight:500;line-height:1.35;color:#1B1A17;">${t.label}</div>
+            ${hintCell}
+          </td>
+          <td align="right" style="vertical-align:top;font-family:${FONT};font-size:21px;font-weight:700;line-height:1.1;color:${t.ink};">
+            ${count}
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>`;
 }
 
-/* Tasks of one project inside a section: a white block on the section's tint.
-   The contrast alone separates the projects — no rules, no outlines. */
-function renderProjectGroup(projectName: string, cards: Card[], today: string, bucket: EmailSection): string {
-  const rows = cards.map((c, i) => renderCardRow(c, today, bucket, i === 0)).join('');
+/* The single panel holding every active bucket. One block, not five: with a
+   number per section there simply isn't enough content to justify more. */
+function renderPanel(rows: string): string {
   return `<tr>
-    <td style="padding:0 0 6px 0;">
+    <td style="padding:0 0 12px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-             style="background:#FFFFFF;border-radius:10px;">
+             style="background:#F2F0E9;border-radius:14px;">
         <tr>
-          <td style="padding:12px 14px 13px 14px;">
-            <div style="font-family:${FONT};font-size:10px;font-weight:400;letter-spacing:0.11em;text-transform:uppercase;color:#97948A;padding-bottom:8px;">
-              ${esc(projectName || 'Untitled project')}
-            </div>
+          <td style="padding:18px 18px 20px 18px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
-}
-
-/* Group a section's cards by project, keeping the order they were sorted in
-   (a project appears where its most urgent task falls). */
-function groupByProject(cards: Card[], projName: Map<string, string>): { name: string; cards: Card[] }[] {
-  const groups: { name: string; cards: Card[] }[] = [];
-  const index = new Map<string, number>();
-  for (const c of cards) {
-    const at = index.get(c.project_id);
-    if (at === undefined) {
-      index.set(c.project_id, groups.length);
-      groups.push({ name: projName.get(c.project_id) || '', cards: [c] });
-    } else {
-      groups[at].cards.push(c);
-    }
-  }
-  return groups;
-}
-
-/* One bucket: a tinted panel headed by a coloured dot, the label and a count,
-   holding one white block per project. */
-function renderSection(bucket: EmailSection, cards: Card[], projName: Map<string, string>, today: string): string {
-  const t = SECTION_THEME[bucket];
-  const groups = groupByProject(cards, projName)
-    .map((g) => renderProjectGroup(g.name, g.cards, today, bucket))
-    .join('');
-  return `<tr>
-    <td style="padding:0 0 12px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-             style="background:${t.tint};border-radius:14px;">
-        <tr>
-          <td style="padding:15px 14px 9px 14px;">
-            <!-- Section header -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:11px;">
-              <tr>
-                <td width="14" style="vertical-align:middle;padding-left:4px;">
-                  <div style="width:8px;height:8px;background:${t.accent};border-radius:9999px;font-size:0;line-height:0;">&nbsp;</div>
-                </td>
-                <td style="vertical-align:middle;font-family:${FONT};font-size:11.5px;font-weight:400;letter-spacing:0.08em;text-transform:uppercase;color:${t.ink};">
-                  ${t.label}
-                </td>
-                <td align="right" style="vertical-align:middle;padding-right:4px;font-family:${FONT};font-size:11.5px;font-weight:400;color:${t.ink};">
-                  ${cards.length}
-                </td>
-              </tr>
-            </table>
-            <!-- One block per project -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${groups}</table>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>`;
-}
-
-/* One milestone row: the version, the project it belongs to, and how the date
-   sits against today — the same "do the arithmetic for the reader" rule the
-   task rows follow. */
-function renderMilestoneRow(v: Version, projectName: string, today: string, first: boolean): string {
-  const t = SECTION_THEME.milestones;
-  const date = formatDigestDate(v.ship_date!);
-  const diff = daysBetween(today, v.ship_date!);
-  const timing = diff === 0 ? `Ships today · ${date}`
-    : diff < 0 ? `${date} · ${diff === -1 ? '1 day' : `${-diff} days`} late`
-      : diff === 1 ? `${date} · tomorrow`
-        : `${date} · in ${diff} days`;
-  return `<tr>
-    <td style="padding:${first ? '0' : '9px'} 0 0 0;font-family:${FONT};">
-      <div style="font-family:${FONT};font-size:14.5px;font-weight:400;line-height:1.4;color:#1B1A17;">${esc(v.name)}</div>
-      <div style="margin-top:3px;font-family:${FONT};font-size:11.5px;font-weight:400;line-height:1.5;color:${t.ink};">${esc(`${projectName} · ${timing}`)}</div>
-    </td>
-  </tr>`;
-}
-
-/* The milestones panel: same tinted block as a task section, one white card
-   holding every ship date in range. */
-function renderMilestones(versions: Version[], projName: Map<string, string>, today: string): string {
-  const t = SECTION_THEME.milestones;
-  const rows = versions
-    .map((v, i) => renderMilestoneRow(v, projName.get(v.project_id) || 'Untitled project', today, i === 0))
-    .join('');
-  return `<tr>
-    <td style="padding:0 0 12px 0;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-             style="background:${t.tint};border-radius:14px;">
-        <tr>
-          <td style="padding:15px 14px 9px 14px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:11px;">
-              <tr>
-                <td width="14" style="vertical-align:middle;padding-left:4px;">
-                  <div style="width:8px;height:8px;background:${t.accent};border-radius:9999px;font-size:0;line-height:0;">&nbsp;</div>
-                </td>
-                <td style="vertical-align:middle;font-family:${FONT};font-size:11.5px;font-weight:400;letter-spacing:0.08em;text-transform:uppercase;color:${t.ink};">
-                  ${t.label}
-                </td>
-                <td align="right" style="vertical-align:middle;padding-right:4px;font-family:${FONT};font-size:11.5px;font-weight:400;color:${t.ink};">
-                  ${versions.length}
-                </td>
-              </tr>
-            </table>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td style="padding:0 0 6px 0;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;border-radius:10px;">
-                    <tr><td style="padding:12px 14px 13px 14px;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table>
-                    </td></tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
           </td>
         </tr>
       </table>
@@ -266,15 +205,17 @@ function renderMilestones(versions: Version[], projName: Map<string, string>, to
 /* Build the reminder email for one user. Returns null when, after applying the
    user's section choices, there is nothing worth emailing about. */
 export function renderDigest(input: DigestInput): { subject: string; html: string } | null {
-  const { projects, cards, prefs, today } = input;
+  const { projectIds, cards, prefs, today } = input;
   const horizonEnd = addDays(today, Math.max(0, prefs.horizon_days));
-  const projName = new Map(projects.map((p) => [p.id, p.name]));
+  /* A Set of ids: the digest reports counts, so no project name is ever read.
+     Kept explicit here rather than left to a comment further down. */
+  const inScope = new Set(projectIds);
 
   /* Milestones in range: still open, and either already past (those matter most)
      or landing inside the horizon. */
   const milestones = prefs.sections.includes('milestones')
     ? (input.versions || [])
-      .filter((v) => v.ship_date && !v.completed && projName.has(v.project_id) && v.ship_date <= horizonEnd)
+      .filter((v) => v.ship_date && !v.completed && inScope.has(v.project_id) && v.ship_date <= horizonEnd)
       .sort((a, b) => (a.ship_date || '').localeCompare(b.ship_date || ''))
     : [];
 
@@ -283,7 +224,7 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
   // 'milestones' isn't a card bucket — it comes from versions, not cards.
   const byBucket: Record<CardSection, Card[]> = { overdue: [], today: [], upcoming: [], undated: [] };
   for (const c of cards) {
-    if (!projName.has(c.project_id)) continue;
+    if (!inScope.has(c.project_id)) continue;
     const b = bucketFor(c, today, horizonEnd);
     if (b && prefs.sections.includes(b)) byBucket[b].push(c);
   }
@@ -295,29 +236,35 @@ export function renderDigest(input: DigestInput): { subject: string; html: strin
 
   const active = order.filter((b) => byBucket[b].length > 0);
 
-  // Milestones lead: a ship date is the frame the tasks underneath sit in.
-  const blocks = (milestones.length ? renderMilestones(milestones, projName, today) : '') + active
-    .map((b) => {
-      const items = byBucket[b]
-        // Undated cards have no date to sort on — fall back to title.
-        .sort((x, y) => (b === 'undated'
-          ? (x.title || '').localeCompare(y.title || '')
-          : (x.target_date || '').localeCompare(y.target_date || '')));
-      return renderSection(b, items, projName, today);
-    })
-    .join('');
+  /* Milestones lead: a ship date is the frame the rest sits in. Each bucket
+     becomes one row — a count and a date hint, never a name or a title. */
+  let rowIndex = 0;
+  const row = (bucket: EmailSection, count: number, dates: string[]) =>
+    renderCountRow(bucket, count, sectionHint(bucket, dates, today), rowIndex++ === 0);
 
-  const subject = (prefs.subject && prefs.subject.trim()) || defaultSubject(today);
+  const rows =
+    (milestones.length
+      ? row('milestones', milestones.length, milestones.map((v) => v.ship_date as string))
+      : '') +
+    active
+      .map((b) => row(b, byBucket[b].length, byBucket[b].flatMap((c) => (c.target_date ? [c.target_date] : []))))
+      .join('');
+
+  const blocks = renderPanel(rows);
+
+  const subject = expandSubject(prefs.subject, {
+    date: formatDigestDate(today),
+    total: String(total),
+    overdue: String(byBucket.overdue.length),
+    today: String(byBucket.today.length),
+    milestones: String(milestones.length)
+  }, today);
 
   /* A one-line summary, used both as the standfirst and as the inbox preview
-     snippet — the reader should know the shape of the mail before opening it. */
-  const projectCount = new Set([
-    ...active.flatMap((b) => byBucket[b].map((c) => c.project_id)),
-    ...milestones.map((v) => v.project_id)
-  ]).size;
+     snippet. Counts only — this string lands in the notification on a lock
+     screen, which is the least private surface the mail ever touches. */
   const summary =
-    `${total} open ${total === 1 ? 'task' : 'tasks'} across ` +
-    `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}` +
+    `${total} open ${total === 1 ? 'task' : 'tasks'}` +
     (byBucket.overdue.length ? ` · ${byBucket.overdue.length} overdue` : '') +
     (milestones.length ? ` · ${milestones.length} milestone${milestones.length === 1 ? '' : 's'}` : '');
 

@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { parseHeaderItems } from '@/lib/grouping';
 import { useHeaderItems } from '@/lib/useHeaderItems';
-import { DEFAULT_HEADER_ITEMS, type Project, type ProjectGroup } from '@/lib/types';
+import { DEFAULT_HEADER_ITEMS, type BoardProject, type Project, type ProjectGroup } from '@/lib/types';
+import { withPersonal, type MembershipRow } from '@/lib/personal';
 import HeaderComposer from '@/app/components/HeaderComposer';
 
 /**
@@ -26,7 +27,7 @@ export default function HeaderProjects({
   userId: string; onToast: (msg: string, error?: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<BoardProject[]>([]);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const selection = useHeaderItems(userId, [], onToast);
@@ -35,13 +36,16 @@ export default function HeaderProjects({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [projRes, grpRes, prefRes] = await Promise.all([
-        supabase.from('projects').select('*').order('position').order('created_at'),
+      const [projRes, memRes, grpRes, prefRes] = await Promise.all([
+        supabase.from('projects').select('*').order('created_at'),
+        supabase.from('project_members').select('project_id, position').eq('user_id', userId),
         supabase.from('project_groups').select('*').order('position'),
         supabase.from('user_prefs').select('header_items').eq('user_id', userId).maybeSingle()
       ]);
       if (!alive) return;
-      setProjects((projRes.data as Project[]) || []);
+      /* Ordered by this reader's own arrangement, which lives on the
+         membership since 0014 — projects.position no longer exists. */
+      setProjects(withPersonal((projRes.data ?? []) as Project[], (memRes.data ?? []) as MembershipRow[]));
       setGroups((grpRes.data as ProjectGroup[]) || []);
       // Same rule as the board: no row at all is the default, an empty list is a choice.
       setItems(prefRes.data ? parseHeaderItems(prefRes.data.header_items) : DEFAULT_HEADER_ITEMS);

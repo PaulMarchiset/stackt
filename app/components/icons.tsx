@@ -79,6 +79,14 @@ export const IconRepo = ({ className }: IconProps) => (
   <svg viewBox="0 0 24 24" className={className}><path d="M6 3V15M6 15C4.34315 15 3 16.3431 3 18C3 19.6569 4.34315 21 6 21C7.65685 21 9 19.6569 9 18M6 15C7.65685 15 9 16.3431 9 18M18 9C19.6569 9 21 7.65685 21 6C21 4.34315 19.6569 3 18 3C16.3431 3 15 4.34315 15 6C15 7.65685 16.3431 9 18 9ZM18 9C18 11.3869 17.0518 13.6761 15.364 15.364C13.6761 17.0518 11.3869 18 9 18" /></svg>
 );
 
+/* Two figures — sharing. One full head-and-shoulders with a second half behind
+   it, which is what keeps it legible at 14px where two equal silhouettes turn
+   to mush. Stripped of its own stroke and width on the way in: colour and
+   weight come from the parent here, like every other glyph in this file. */
+export const IconPeople = ({ className }: IconProps) => (
+  <svg viewBox="0 0 24 24" className={className}><path d="M16 3.46776C17.4817 4.20411 18.5 5.73314 18.5 7.5C18.5 9.26686 17.4817 10.7959 16 11.5322M18 16.7664C19.5115 17.4503 20.8725 18.565 22 20M2 20C3.94649 17.5226 6.58918 16 9.5 16C12.4108 16 15.0535 17.5226 17 20M14 7.5C14 9.98528 11.9853 12 9.5 12C7.01472 12 5 9.98528 5 7.5C5 5.01472 7.01472 3 9.5 3C11.9853 3 14 5.01472 14 7.5Z" /></svg>
+);
+
 export const IconMerge = ({ className }: IconProps) => (
   <svg viewBox="0 0 16 16" className={className}><path d="M5 3v4a4 4 0 0 0 4 4h4M9.5 8.5l3.5 2.5-3.5 2.5" /></svg>
 );

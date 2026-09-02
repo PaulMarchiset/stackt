@@ -40,18 +40,40 @@ export type EditTarget =
   | { kind: 'edit'; id: string }
   | { kind: 'new'; status: Status };
 
+/**
+ * A project as it exists in the database: the columns everyone on it shares.
+ * Renaming one, pointing it at a different active version or setting its repo
+ * URL changes it for every member, because it *is* the project.
+ */
 export interface Project {
   id: string;
   name: string;
   active_version_id: string | null; // FK → versions.id (source of truth)
-  group_id: string | null; // FK → project_groups.id; null = ungrouped
-  favorite: boolean;
-
   repo_url: string; // base URL of the git repository (optional; '' when unset)
-  position: number;
   dev_mode: boolean | null; // per-project override of developer mode; null = follow the device default
-  remind: boolean; // include this project in the daily email reminder
 }
+
+/**
+ * What ONE person thinks of a project. Lives on project_members, not on the
+ * project — with two people on a board, whether it is a favourite and where it
+ * sits in the list are opinions, and writing them to the shared row means
+ * starring something for your collaborators and refiling it out from under
+ * them (migrations 0010 and 0014).
+ */
+export interface PersonalFields {
+  remind: boolean;   // include this project in *your* daily email
+  favorite: boolean; // starred by you
+  position: number;  // where you keep it in your order
+  group_id: string | null; // FK → project_groups.id — one of YOUR bands; null = ungrouped
+}
+
+/**
+ * A project as a screen shows it: the shared row with this reader's opinion of
+ * it merged in (lib/personal.ts). Every component that renders a project wants
+ * this, not `Project` — which is why the two are named apart. `Project` alone
+ * is what you write back to the projects table.
+ */
+export type BoardProject = Project & PersonalFields;
 
 /* A named, ordered island of projects. Used to segment the board header; a
    project belongs to at most one. */

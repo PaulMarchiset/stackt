@@ -1,6 +1,7 @@
 'use client';
 
 import type { createClient } from '@/lib/supabase/client';
+import { DEMO_USER } from './fixture';
 
 /**
  * The database the demo writes to: none.
@@ -90,6 +91,49 @@ class DemoQuery implements PromiseLike<{ data: unknown; error: null }> {
 }
 
 /**
+ * Stored procedures, stubbed the same way the tables are.
+ *
+ * create_project is the one that matters: since the collaborative work, making
+ * a project is an RPC rather than an insert (a plain `insert ... select` cannot
+ * satisfy the membership policy that guards its own RETURNING — see migration
+ * 0012). Without a stand-in here, "Create" in the demo would call a method the
+ * stub doesn't have and throw. Anything else resolves to null, which is what a
+ * function with nothing to say returns.
+ */
+class DemoRpc implements PromiseLike<{ data: unknown; error: null }> {
+  constructor(private fn: string, private args: Row) {}
+
+  then<R1 = { data: unknown; error: null }, R2 = never>(
+    onfulfilled?: ((value: { data: unknown; error: null }) => R1 | PromiseLike<R1>) | null,
+    onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null
+  ): PromiseLike<R1 | R2> {
+    let data: unknown = null;
+
+    if (this.fn === 'create_project') {
+      data = stamp('projects', {
+        name: (this.args.p_name as string) || 'New project',
+        repo_url: (this.args.p_repo_url as string) ?? '',
+        dev_mode: (this.args.p_dev_mode as boolean | null) ?? null
+      });
+    } else if (this.fn === 'project_members_detailed') {
+      /* A populated sharing panel, for the same reason the board is populated:
+         this is the surface being photographed, and an empty members list is
+         not what the feature looks like in use. The demo user is the owner, so
+         the invite form and the role controls are all on screen. */
+      data = [
+        { user_id: DEMO_USER.id, email: DEMO_USER.email, role: 'owner', joined_at: '2026-01-04T09:00:00Z' },
+        { user_id: 'demo-mate-1', email: 'lena@example.com', role: 'editor', joined_at: '2026-02-11T09:00:00Z' },
+        { user_id: 'demo-mate-2', email: 'sam@example.com', role: 'editor', joined_at: '2026-03-02T09:00:00Z' }
+      ];
+    } else if (this.fn === 'project_invites_pending') {
+      data = [{ id: 'demo-inv-1', email: 'noor@example.com', role: 'editor', expires_at: '2099-01-01T00:00:00Z' }];
+    }
+
+    return Promise.resolve({ data, error: null }).then(onfulfilled, onrejected);
+  }
+}
+
+/**
  * A stand-in for the browser Supabase client, typed as the real one so the
  * stores can hold either without knowing which they got. The cast is the whole
  * point: it is asserted once, here, instead of leaking a union into every
@@ -97,6 +141,7 @@ class DemoQuery implements PromiseLike<{ data: unknown; error: null }> {
  */
 export function createDemoClient(): ReturnType<typeof createClient> {
   return {
-    from: (table: string) => new DemoQuery(table)
+    from: (table: string) => new DemoQuery(table),
+    rpc: (fn: string, args?: Row) => new DemoRpc(fn, args ?? {})
   } as unknown as ReturnType<typeof createClient>;
 }

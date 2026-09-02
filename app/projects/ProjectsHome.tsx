@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Project, ProjectGroup, Version } from '@/lib/types';
+import type { BoardProject, ProjectGroup, Version } from '@/lib/types';
 import { applyProjectDrop, favoriteProjects, projectSections, sortGroups, type ProjectSection } from '@/lib/grouping';
 import { useDevMode } from '@/lib/useDevMode';
 import { useDragSort } from '@/lib/useDragSort';
@@ -58,10 +58,10 @@ function ModeSelect({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
  * repeating cards you can already see (see FavoritesBar).
  */
 export default function ProjectsHome({
-  initialProjects, cards, groups: initialGroups = [], userEmail, userName = '', demo = false
+  initialProjects, cards, groups: initialGroups = [], userId, userEmail, userName = '', demo = false
 }: {
-  initialProjects: Project[]; cards: CardLite[]; groups?: ProjectGroup[];
-  userEmail: string; userName?: string;
+  initialProjects: BoardProject[]; cards: CardLite[]; groups?: ProjectGroup[];
+  userId: string; userEmail: string; userName?: string;
   /* Screenshot mode: the rows are a fixture and every write is swallowed
      (lib/demo/fixture.ts · lib/demo/db.ts). The page itself is unchanged. */
   demo?: boolean;
@@ -69,7 +69,7 @@ export default function ProjectsHome({
   const [devMode] = useDevMode();
   const router = useRouter();
   const { toast, showToast } = useToast();
-  const store = useProjectsStore(initialProjects, initialGroups, showToast, demo);
+  const store = useProjectsStore(initialProjects, initialGroups, showToast, userId, demo);
   const { projects, groups, supabase, persistRow } = store;
   /* Dragging is a pointer affordance. On touch there is no handle at all and
      the ⋯ menus do the same work in one tap, so the whole apparatus is simply
@@ -127,12 +127,17 @@ export default function ProjectsHome({
     if (busy) return;
     setBusy(true);
     const version = npVersion.trim();
-    const project = await persistRow<Project>(
-      supabase.from('projects').insert({
-        name: npName.trim() || 'New project',
-        repo_url: npRepo.trim(),
-        dev_mode: modeToDev(npMode)
-      }).select().single(),
+    /* Through an RPC rather than a plain insert: a bare `insert ... select()`
+       returns the row, and the SELECT policy that guards it asks whether you
+       are a member of the project — which you only become in an AFTER trigger,
+       once the row has already been handed back. create_project writes the
+       project and the membership together (migration 0012). */
+    const project = await persistRow<BoardProject>(
+      supabase.rpc('create_project', {
+        p_name: npName.trim() || 'New project',
+        p_repo_url: npRepo.trim(),
+        p_dev_mode: modeToDev(npMode)
+      }),
       { message: 'Could not create project — check your connection.' }
     );
     if (!project) { setBusy(false); return; }
@@ -219,7 +224,7 @@ export default function ProjectsHome({
   /* `others` is the band without the card in flight, which is what an insertion
      index has to count: dropping "third in this band" means the same thing
      whether or not the card was already one of its members. */
-  const card = (p: Project, section: ProjectSection, others: Project[]) => {
+  const card = (p: BoardProject, section: ProjectSection, others: BoardProject[]) => {
     const { u, b } = counts(p.id);
     const pv = vocab(p.dev_mode ?? devMode);
     const meta = u + ' ' + (u !== 1 ? pv.updates : pv.update).toLowerCase()

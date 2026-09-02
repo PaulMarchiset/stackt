@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type Project, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
+import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type BoardProject, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
 import { headerIslands, projectSections } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
+import { useLiveBoard } from '@/lib/useLiveBoard';
 import { useHeaderItems } from '@/lib/useHeaderItems';
 import { useFoldedGroups } from '@/lib/useFoldedGroups';
 import { useIsMobile } from '@/lib/useIsMobile';
@@ -20,6 +21,7 @@ import HeaderComposer from '@/app/components/HeaderComposer';
 import { ConfirmDialog, PromptDialog } from '@/app/components/Dialog';
 import { IconPlus, IconRepo } from '@/app/components/icons';
 import CardEditor from './CardEditor';
+import MembersPanel from './MembersPanel';
 import ImportDialog from './ImportDialog';
 import Modal from './Modal';
 import Timeline from './Timeline';
@@ -43,14 +45,14 @@ export default function BoardApp({
   groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
   userId, userEmail, userName = '', initialActiveId, demo = false
 }: {
-  initialProjects: Project[]; initialCards: Card[]; initialVersions: Version[];
+  initialProjects: BoardProject[]; initialCards: Card[]; initialVersions: Version[];
   groups?: ProjectGroup[]; headerItems?: HeaderItem[];
   userId: string; userEmail: string; userName?: string; initialActiveId?: string | null;
   /* Screenshot mode: the rows are a fixture and every write is swallowed
      (lib/demo/fixture.ts · lib/demo/db.ts). The board itself is unchanged. */
   demo?: boolean;
 }) {
-  const store = useBoardStore(initialProjects, initialCards, initialVersions, demo);
+  const store = useBoardStore(initialProjects, initialCards, initialVersions, userId, demo);
   const { projects, cards, versions, saving, toast } = store;
   /* What heads the board is an account setting the board can edit in place —
      same hook, same composer as the settings page. */
@@ -80,6 +82,7 @@ export default function BoardApp({
   /* In-app dialogs (replace native prompt/confirm). Each is one piece of state:
      either it's open or it isn't, and <PromptDialog> owns whatever is typed. */
   const [repoEdit, setRepoEdit] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [addVerOpen, setAddVerOpen] = useState(false);
   const [mergeConfirm, setMergeConfirm] = useState<{ fromId: string; fromName: string; toId: string; toName: string } | null>(null);
   const [delVerConfirm, setDelVerConfirm] = useState<{ id: string; name: string } | null>(null);
@@ -96,6 +99,26 @@ export default function BoardApp({
   };
 
   const project = projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
+
+  /* Live updates, for the open board only. Watching every project a person
+     belongs to would multiply the traffic by their project count to show them
+     things they are not looking at; the board they have on screen is the only
+     one where a stale card actually misleads anyone.
+     Off in the demo: the fixture has no database behind it to listen to. */
+  useLiveBoard({
+    supabase: store.supabase,
+    projectId: project?.id ?? null,
+    enabled: !demo && !!project,
+    onEvent: store.applyRemote,
+    onResync: () => { if (project) void store.resyncProject(project.id); }
+  });
+
+  /* Tell the store which card is under the cursor, so an incoming change to it
+     is held back rather than dropped into the middle of what is being typed. */
+  useEffect(() => {
+    store.holdCard(editing?.kind === 'edit' ? editing.id : null);
+  }, [editing, store]);
+
   const projCards = useMemo(
     () => (project ? cards.filter((c) => c.project_id === project.id) : []),
     [cards, project]
@@ -206,14 +229,15 @@ export default function BoardApp({
         if (from && islandOf.get(from) === islandOf.get(overId)) store.moveProjectBefore(from, overId);
       }}
       onDropTab={() => { dragProj.current = null; store.commitProjectOrder(); }}
-      onView={setView} onOpenRepo={() => setRepoEdit(true)} />
+      onView={setView} onOpenRepo={() => setRepoEdit(true)}
+      onOpenMembers={() => setMembersOpen(true)} />
   );
 
   if (!project) {
     return (
       <div className="app">
         {header}
-        <div className="banner" style={{ marginTop: 20 }}>No projects yet. Use “+ Project” to create one.</div>
+        <div className="banner" style={{ marginTop: 20 }}>No projects yet. Use “+ BoardProject” to create one.</div>
       </div>
     );
   }
@@ -293,7 +317,7 @@ export default function BoardApp({
               </button>
               <NotifBell align="right" btnClass="btn ghost icon-only meta-bell"
                 projectName={project.name} remind={project.remind}
-                onToggleRemind={(next) => store.patchProject(project.id, { remind: next })} />
+                onToggleRemind={(next) => store.setRemind(project.id, next)} />
             </div>
           )}
         </div>
@@ -405,6 +429,17 @@ export default function BoardApp({
           onSubmit={saveRepo} onCancel={() => setRepoEdit(false)} />
       )}
 
+      {membersOpen && (
+        <Modal title="Who can see this" className="modal-wide modal-center" onClose={() => setMembersOpen(false)}>
+          <MembersPanel
+            projectId={project.id} projectName={project.name} userId={userId} demo={demo}
+            /* Leaving means this board is no longer ours to render — a full
+               reload is the honest response, not a local state patch that
+               would leave stale cards on screen. */
+            onLeft={() => window.location.assign('/projects')} />
+        </Modal>
+      )}
+
       {addVerOpen && (
         <PromptDialog title={`New ${v.version.toLowerCase()}`}
           label={`${v.version} label`} placeholder={`e.g. ${v.versionExample}`}
@@ -432,7 +467,7 @@ export default function BoardApp({
       )}
 
       {sheet?.kind === 'project' && (
-        <Sheet title="Project" onClose={() => setSheet(null)}>
+        <Sheet title="BoardProject" onClose={() => setSheet(null)}>
           <div className="sheet-rename">
             <label>Rename</label>
             <input className="auth-input" value={project.name} spellCheck={false}
@@ -471,7 +506,7 @@ export default function BoardApp({
             <span className="sheet-toggle-label">Daily reminder<em>Include “{project.name || 'Untitled'}” in your morning email</em></span>
             <button className={'switch' + (project.remind ? ' on' : '')} role="switch" aria-checked={project.remind}
               aria-label="Include this project in the daily email"
-              onClick={() => store.patchProject(project.id, { remind: !project.remind })}><span /></button>
+              onClick={() => store.setRemind(project.id, !project.remind)}><span /></button>
           </div>
           {devMode && (
             <button className="sheet-item" onClick={() => { setSheet(null); setRepoEdit(true); }}>
@@ -479,6 +514,9 @@ export default function BoardApp({
               <span className="sheet-item-note">{project.repo_url ? 'Linked' : 'Not set'}</span>
             </button>
           )}
+          <button className="sheet-item" onClick={() => { setSheet(null); setMembersOpen(true); }}>
+            <span className="sheet-item-main"><IconPlus /> Who can see this</span>
+          </button>
           <button className="sheet-item" onClick={() => { setSheet(null); setImportOpen(true); }}>
             <span className="sheet-item-main"><IconPlus /> Import a list</span>
           </button>

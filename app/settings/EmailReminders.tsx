@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { usePersist } from '@/lib/usePersist';
-import { defaultSubject, renderDigest, weekdayOf } from '@/lib/email/template';
+import { SUBJECT_TOKENS, defaultSubject, renderDigest, weekdayOf } from '@/lib/email/template';
 import { localTimeZone, sendWindow, versionTheme } from '@/lib/util';
 import {
   DEFAULT_EMAIL_PREFS, EMAIL_SECTIONS, EVERY_DAY, WEEKDAYS, WEEKDAYS_ONLY,
-  type Card, type EmailPrefs, type EmailSection, type Project, type Version
+  type Card, type EmailPrefs, type EmailSection, type BoardProject, type Version
 } from '@/lib/types';
 
-type ProjRow = Pick<Project, 'id' | 'name' | 'remind'>;
+type ProjRow = Pick<BoardProject, 'id' | 'name' | 'remind'>;
 type VersionRow = Pick<Version, 'id' | 'project_id' | 'name' | 'ship_date' | 'completed'>;
 
 const sameDays = (a: number[], b: number[]) =>
@@ -56,16 +56,24 @@ export default function EmailReminders({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [projRes, prefRes, cardRes, verRes] = await Promise.all([
-        supabase.from('projects').select('id, name, remind').order('position').order('created_at'),
+      const [projRes, memRes, prefRes, cardRes, verRes] = await Promise.all([
+        supabase.from('projects').select('id, name').order('created_at'),
+        /* `remind` lives on the membership, not the project: on a shared board
+           each person decides for themselves. Scoped to this user because the
+           members table also returns the other people on a shared project. */
+        supabase.from('project_members').select('project_id, remind').eq('user_id', userId),
         supabase.from('email_prefs').select('*').eq('user_id', userId).maybeSingle(),
         supabase.from('cards').select('id, project_id, title, target_date, done').eq('done', false),
         supabase.from('versions').select('id, project_id, name, ship_date, completed')
           .eq('completed', false).not('ship_date', 'is', null)
       ]);
       if (!alive) return;
-      if (projRes.error || prefRes.error) setSchemaError(true);
-      setProjects((projRes.data as ProjRow[]) || []);
+      if (projRes.error || prefRes.error || memRes.error) setSchemaError(true);
+      const remindBy = new Map(
+        (memRes.data ?? []).map((m) => [m.project_id as string, !!m.remind])
+      );
+      setProjects(((projRes.data as { id: string; name: string }[]) || [])
+        .map((p) => ({ ...p, remind: remindBy.get(p.id) ?? false })));
       setCards((cardRes.data as Card[]) || []);
       setVersions((verRes.data as VersionRow[]) || []);
       const pref = prefRes.data;
@@ -83,7 +91,8 @@ export default function EmailReminders({
 
   async function toggleProject(id: string, next: boolean) {
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: next } : p)));
-    void persist(supabase.from('projects').update({ remind: next }).eq('id', id), {
+    void persist(supabase.from('project_members').update({ remind: next })
+      .eq('project_id', id).eq('user_id', userId), {
       message: 'Could not update that project — try again.',
       onError: () => setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, remind: !next } : p)))
     });
@@ -132,11 +141,12 @@ export default function EmailReminders({
       user_id: userId, enabled, subject: subject.trim() || null,
       horizon_days: Math.max(0, Math.min(30, Number(horizon) || 0)), sections, days
     };
-    const remindedIds = new Set(reminded.map((p) => p.id));
+    const remindedIds = reminded.map((p) => p.id);
+    const inScope = new Set(remindedIds);
     return renderDigest({
-      projects: reminded as Project[],
+      projectIds: remindedIds,
       cards,
-      versions: versions.filter((z) => remindedIds.has(z.project_id)) as Version[],
+      versions: versions.filter((z) => inScope.has(z.project_id)) as Version[],
       prefs, today
     });
   }, [userId, enabled, subject, horizon, sections, days, reminded, cards, versions, today]);
@@ -216,7 +226,17 @@ export default function EmailReminders({
               <label className="set-label" htmlFor="er-subject">Subject line</label>
               <input id="er-subject" className="set-input mono" value={subject} placeholder={defaultSubject(today)}
                 onChange={(e) => setSubject(e.target.value)} />
-              <p className="set-hint">Leave it empty to keep the default subject.</p>
+              <p className="set-hint">
+                Leave it empty to keep the default subject. You can drop in{' '}
+                {SUBJECT_TOKENS.map((t, i) => (
+                  <span key={t}>
+                    {i > 0 && (i === SUBJECT_TOKENS.length - 1 ? ' and ' : ', ')}
+                    <code>{`{${t}}`}</code>
+                  </span>
+                ))}
+                {' '}— they become the day and the counts, e.g. <code>Stackt · {'{overdue}'} overdue</code>.
+                The preview below shows the result.
+              </p>
             </div>
 
             <div className="set-row">

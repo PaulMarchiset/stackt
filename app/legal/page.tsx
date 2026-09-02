@@ -32,7 +32,9 @@ export default function LegalNoticePage() {
         The application is hosted by <strong>Vercel Inc.</strong>, 340 S Lemon Ave #4133, Walnut, CA
         91789, USA (<a href="https://vercel.com">vercel.com</a>). The database and authentication are
         operated through <strong>Supabase</strong> (Supabase, Inc.), with data stored in the European
-        Union (Ireland).
+        Union (Ireland). Transactional email is sent through <strong>Brevo</strong> (Sendinblue SAS,
+        106 boulevard Haussmann, 75008 Paris, France). What each of these receives is set out in the{' '}
+        <a href="/privacy">Privacy Policy</a>.
       </p>
 
       <h2>Intellectual property</h2>

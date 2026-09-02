@@ -1,7 +1,7 @@
 'use client';
 
 import type { Card, TimelineViewProps, Version } from '@/lib/types';
-import { dateClass, formatDate, formatDateRange, todayISO, versionColor } from '@/lib/util';
+import { DATE_LOCALE, dateClass, formatDate, formatDateRange, todayISO, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import BranchChip from '@/app/components/BranchChip';
@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = { todo: 'To do', inprogress: 'In pr
 /* Weekday + date label for a section header, e.g. "Fri · Jul 3, 2026". */
 function dayLabel(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
-  const dow = new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short' });
+  const dow = new Date(y, m - 1, d).toLocaleDateString(DATE_LOCALE, { weekday: 'short' });
   return `${dow} · ${formatDate(iso)}`;
 }
 

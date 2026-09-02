@@ -1,6 +1,6 @@
 'use client';
 
-import type { Card, Project, Version } from '@/lib/types';
+import type { Card, BoardProject, Version } from '@/lib/types';
 import { formatDateShort, shipClass, versionColor } from '@/lib/util';
 import { vocab } from '@/lib/labels';
 import { useBoardDevMode } from '@/lib/devModeContext';
@@ -23,7 +23,7 @@ export default function VersionBar({
   showCompleted, typeFilter,
   onSelect, onOptions, onAdd, onShowCompleted, onTypeFilter
 }: {
-  project: Project;
+  project: BoardProject;
   projCards: Card[];
   openVersions: Version[];
   completedVersions: Version[];      // already sorted newest-completed first

@@ -35,19 +35,30 @@ const SECTIONS = [
 
 const CONTACT = 'stackt@paulmarchiset.me';
 
+/* One project whose ownership has to go somewhere before this account can be
+   deleted, with the members who could take it. Shape of one row returned by
+   public.projects_needing_new_owner() (migration 0011). */
+type HandoverCandidate = { user_id: string; email: string; role: string; joined_at: string };
+type Handover = { project_id: string; project_name: string; candidates: HandoverCandidate[] | null };
+
 const LEGAL = [
   { href: '/legal', label: 'Legal notice' },
   { href: '/terms', label: 'Terms of Use' },
   { href: '/privacy', label: 'Privacy Policy' }
 ];
 
-export default function SettingsView({ userId, userEmail, userName = '' }: { userId: string; userEmail: string; userName?: string }) {
+export default function SettingsView({ userId, userEmail, userName = '', deleteFailed = false }: { userId: string; userEmail: string; userName?: string; deleteFailed?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
   const [devMode, setDevMode] = useDevMode();
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  /* Projects this account is the last owner of that other people are on — the
+     only ones that need a decision before the account can go. */
+  const [handover, setHandover] = useState<Handover[]>([]);
+  const [heirs, setHeirs] = useState<Record<string, string>>({});
+  const [checkingHandover, setCheckingHandover] = useState(false);
   const [active, setActive] = useState<string>(SECTIONS[0].id);
   /* Built after mount: the user agent is only knowable in the browser, and a
      server/client mismatch would trip hydration. Falls back to a bare mailto. */
@@ -79,6 +90,49 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
+
+  /* Ask the database what needs deciding before showing the confirmation.
+     If the call fails — the migration hasn't run on this environment — we go
+     ahead without the picker: delete_own_account() applies the same
+     longest-standing-member rule on its own, so the worst case is that the user
+     doesn't get to override the default, not that a project is stranded. */
+  async function beginDelete() {
+    setCheckingHandover(true);
+    const { data, error } = await supabase.rpc('projects_needing_new_owner');
+    setCheckingHandover(false);
+
+    const rows = error ? [] : ((data as Handover[]) ?? []);
+    if (error) console.error('projects_needing_new_owner failed:', error.message);
+
+    setHandover(rows);
+    setHeirs(Object.fromEntries(rows.map((r) => [r.project_id, r.candidates?.[0]?.user_id ?? ''])));
+    setConfirmDel(true);
+  }
+
+  /* Hand each project over, then let the form post for real. The POST stays a
+     native form navigation rather than a fetch(): that is what carries the
+     Origin header the route checks (lib/sameOrigin.ts). */
+  async function handoverThenDelete(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    setBusy(true);
+
+    for (const row of handover) {
+      const heir = heirs[row.project_id];
+      if (!heir) continue;
+      const { error } = await supabase.rpc('set_project_role', {
+        p: row.project_id, target: heir, new_role: 'owner'
+      });
+      if (error) {
+        // Stop rather than delete the account with a handover half-applied.
+        setBusy(false);
+        say(`Could not hand over "${row.project_name}" — nothing was deleted.`, true);
+        return;
+      }
+    }
+
+    form.submit(); // native submit: skips this handler, keeps the Origin header
+  }
 
   async function saveName() {
     setBusy(true);
@@ -256,18 +310,59 @@ export default function SettingsView({ userId, userEmail, userName = '' }: { use
                     <div className="set-rowtext">
                       <h3 className="set-h3 danger">Delete account</h3>
                       <p className="set-desc">Permanently delete your account and every project. This can&apos;t be undone.</p>
+                      {/* The route redirects here with ?deleted=partial when the
+                          projects went but the login record couldn't. Saying so
+                          beats sending them home as if it had all worked. */}
+                      {deleteFailed && (
+                        <p className="set-desc danger" role="alert">
+                          Your projects were deleted, but the login record couldn&apos;t be removed.
+                          Email {CONTACT} and we&apos;ll finish it by hand.
+                        </p>
+                      )}
                     </div>
-                    {!confirmDel ? (
-                      <button className="btn danger set-action" onClick={() => setConfirmDel(true)}>Delete…</button>
-                    ) : (
-                      <div className="set-confirm">
-                        <button className="btn ghost" onClick={() => setConfirmDel(false)}>Cancel</button>
-                        <form action="/auth/delete" method="post">
-                          <button className="btn danger-solid" type="submit">Delete my account</button>
-                        </form>
-                      </div>
+                    {!confirmDel && (
+                      <button className="btn danger set-action" disabled={checkingHandover}
+                        onClick={beginDelete}>{checkingHandover ? 'Checking…' : 'Delete…'}</button>
                     )}
                   </div>
+
+                  {confirmDel && (
+                    <form action="/auth/delete" method="post" onSubmit={handoverThenDelete}>
+                      {/* Only the projects that actually need a decision: ones
+                          where you are the last owner and other people are on
+                          them. Everything else resolves without asking. */}
+                      {handover.length > 0 && (
+                        <div className="set-handover">
+                          <p className="set-desc">
+                            {handover.length === 1
+                              ? 'This project has other members. Choose who takes it over:'
+                              : `These ${handover.length} projects have other members. Choose who takes each one over:`}
+                          </p>
+                          {handover.map((row) => (
+                            <div key={row.project_id} className="set-handover-row">
+                              <span className="set-handover-name">{row.project_name || 'Untitled project'}</span>
+                              <select className="set-input" value={heirs[row.project_id] ?? ''}
+                                aria-label={`New owner for ${row.project_name || 'Untitled project'}`}
+                                onChange={(e) => setHeirs((h) => ({ ...h, [row.project_id]: e.target.value }))}>
+                                {(row.candidates ?? []).map((c) => (
+                                  <option key={c.user_id} value={c.user_id}>{c.email}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                          <p className="set-hint">
+                            The longest-standing member is pre-selected. Leave it as is and that&apos;s who gets it.
+                          </p>
+                        </div>
+                      )}
+                      <div className="set-confirm">
+                        <button className="btn ghost" type="button" onClick={() => setConfirmDel(false)}>Cancel</button>
+                        <button className="btn danger-solid" type="submit" disabled={busy}>
+                          {busy ? 'Deleting…' : 'Delete my account'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
             </section>

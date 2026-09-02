@@ -1,10 +1,10 @@
 'use client';
 
-import type { Project } from '@/lib/types';
+import type { BoardProject } from '@/lib/types';
 import type { ProjectIsland } from '@/lib/grouping';
 import { repoLabel, versionTheme } from '@/lib/util';
 import AccountMenu from '@/app/components/AccountMenu';
-import { IconBoard, IconChevronDown, IconDots, IconPlus, IconRepo, IconSliders, IconTimeline } from '@/app/components/icons';
+import { IconBoard, IconChevronDown, IconDots, IconPeople, IconPlus, IconRepo, IconSliders, IconTimeline } from '@/app/components/icons';
 import Logo from '../Logo';
 
 export type BoardView = 'board' | 'timeline';
@@ -28,7 +28,7 @@ export function ViewToggle({ view, onChange }: { view: BoardView; onChange: (v: 
 
 /* Git-repo control. Desktop only — on touch it lives in the ⋯ menu sheet, so
    the header stays down to the things you actually tap. */
-function RepoButton({ project, onOpen }: { project: Project; onOpen: () => void }) {
+function RepoButton({ project, onOpen }: { project: BoardProject; onOpen: () => void }) {
   return (
     <button className={'btn ghost repo-btn' + (project.repo_url ? ' set' : '')} onClick={onOpen}
       title={project.repo_url ? 'Git repository' : 'Set git repository'}>
@@ -46,9 +46,9 @@ function RepoButton({ project, onOpen }: { project: Project; onOpen: () => void 
 
 export function Topbar({
   islands, activeId, project, view, devMode, userEmail, userName, openCount, composer, composerOpen,
-  foldedGroups, onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onComposer, onFoldGroup
+  foldedGroups, onSelectProject, onDragStart, onDragOverTab, onDropTab, onView, onOpenRepo, onOpenMembers, onComposer, onFoldGroup
 }: {
-  islands: ProjectIsland[]; activeId: string | null; project: Project | null;
+  islands: ProjectIsland[]; activeId: string | null; project: BoardProject | null;
   view: BoardView; devMode: boolean; userEmail: string; userName: string;
   openCount: (projectId: string) => number;
   /* Group ids whose run is folded shut. */
@@ -64,6 +64,7 @@ export function Topbar({
   onDropTab: () => void;
   onView: (v: BoardView) => void;
   onOpenRepo: () => void;
+  onOpenMembers: () => void;
   onComposer: () => void;
   onFoldGroup: (groupId: string) => void;
 }) {
@@ -134,6 +135,13 @@ export function Topbar({
         </div>
         <ViewToggle view={view} onChange={onView} />
         {project && devMode && <RepoButton project={project} onOpen={onOpenRepo} />}
+        {/* Sharing is not a developer feature — it shows whatever the dialect. */}
+        {project && (
+          <button className="btn ghost repo-btn" onClick={onOpenMembers} title="Who can see this project">
+            <IconPeople className="ic" />
+            <span className="repo-btn-label">Share</span>
+          </button>
+        )}
         <AccountMenu userEmail={userEmail} userName={userName} />
       </div>
     </header>
@@ -150,7 +158,7 @@ export function Topbar({
 export function MobileTopbar({
   project, view, saving, onOpenProjects, onOpenMenu, onView
 }: {
-  project: Project | null; view: BoardView; saving: 'saved' | 'saving' | 'error';
+  project: BoardProject | null; view: BoardView; saving: 'saved' | 'saving' | 'error';
   onOpenProjects: () => void; onOpenMenu: () => void; onView: (v: BoardView) => void;
 }) {
   return (

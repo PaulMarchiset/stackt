@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
-import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
+import { Plus_Jakarta_Sans, JetBrains_Mono, Noto_Sans_JP } from 'next/font/google';
 
 const sans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -11,6 +11,34 @@ const mono = JetBrains_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],
   variable: '--font-mono'
+});
+
+/**
+ * Japanese, Chinese and Korean glyphs — everything the Latin faces above simply
+ * do not contain. A card titled 会議の準備 renders as boxes without this.
+ *
+ * It is never the first font in a stack: browsers fall back to the next family
+ * *per glyph*, not per element, so Latin text keeps using Plus Jakarta Sans and
+ * only the characters it lacks fall through to here. Nothing needs to detect a
+ * language.
+ *
+ * `preload: false` is the setting that matters. Noto Sans JP is thousands of
+ * glyphs, split by Google into ~120 unicode-range blocks; the browser fetches
+ * only the blocks a page actually uses (usually one or two, tens of kilobytes),
+ * but preloading would pull them on every page including the ones with no
+ * Japanese on them at all.
+ *
+ * Self-hosted through next/font rather than linked from fonts.googleapis.com,
+ * and deliberately: a hotlinked Google font sends every visitor's IP address to
+ * Google on every page load, which is both a third party we do not list in the
+ * privacy policy and a CSP host we would have to open up.
+ */
+const cjk = Noto_Sans_JP({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  variable: '--font-cjk',
+  display: 'swap',
+  preload: false
 });
 
 const DESC =
@@ -54,7 +82,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${cjk.variable}`}>
       <body>{children}</body>
     </html>
   );

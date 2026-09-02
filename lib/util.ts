@@ -42,6 +42,19 @@ export function sortCompletedVersions(list: Version[]): Version[] {
 export const CRON_UTC_HOUR = 8;
 export const CRON_WINDOW_HOURS = 1;
 
+/* Every date the UI prints is formatted with THIS locale, never the ambient one.
+   Passing `undefined` as the locale asks the runtime for its default, and the
+   runtime is a different machine on each side of a render: Node formats the
+   server pass, the browser formats the hydration pass. A French browser against
+   an English server turns "9 Sept" into "9 sept.", React sees text it did not
+   expect, hydration fails, and — because the failure is outside a Suspense
+   boundary — the whole page falls back to client rendering with no event
+   handlers attached. The board looks perfectly normal and no button works.
+
+   Pinning it makes both passes agree. en-GB matches sendWindow below and the
+   reminder email, which spells its months out for exactly the same reason. */
+export const DATE_LOCALE = 'en-GB';
+
 /* The device's own timezone, e.g. "Europe/Paris". */
 export function localTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -68,18 +81,18 @@ export function formatDate(iso: string | null): string {
   if (!iso) return 'No date';
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return dt.toLocaleDateString(DATE_LOCALE, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/* "Mar 3 → Mar 7, 2025" for a multi-day card; falls back to a single date. */
+/* "3 Mar → 7 Mar 2025" for a multi-day card; falls back to a single date. */
 export function formatDateRange(start: string | null, end: string | null): string {
   if (!start || !end || end <= start) return formatDate(start);
   const s = start.split('-').map(Number), e = end.split('-').map(Number);
   const sd = new Date(s[0], s[1] - 1, s[2]);
   const ed = new Date(e[0], e[1] - 1, e[2]);
   const sameYear = s[0] === e[0];
-  const left = sd.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
-  const right = ed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const left = sd.toLocaleDateString(DATE_LOCALE, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+  const right = ed.toLocaleDateString(DATE_LOCALE, { month: 'short', day: 'numeric', year: 'numeric' });
   return `${left} → ${right}`;
 }
 
@@ -87,7 +100,7 @@ export function formatDateRange(start: string | null, end: string | null): strin
    double the pill's width. */
 export function formatDateShort(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return new Date(y, m - 1, d).toLocaleDateString(DATE_LOCALE, { month: 'short', day: 'numeric' });
 }
 
 /* A version's ship date, classified for display: 'late' once the day has passed

@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { IconChevronLeft, IconChevronRight } from '@/app/components/icons';
+import { DATE_LOCALE } from '@/lib/util';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const isoOf = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
 // Localized short weekday names, Monday-first (Jan 1 2024 was a Monday).
 const WEEK = Array.from({ length: 7 }, (_, i) =>
-  new Date(2024, 0, 1 + i).toLocaleDateString(undefined, { weekday: 'short' }));
+  new Date(2024, 0, 1 + i).toLocaleDateString(DATE_LOCALE, { weekday: 'short' }));
 
 /* Popover footprint, used by callers to decide whether to flip it above the
    trigger. Keep in step with `.cal-pop` in globals.css. */
@@ -46,7 +47,7 @@ export default function Calendar({
   const offset = (first.getDay() + 6) % 7;            // Monday-first leading blanks
   const days = new Date(y, m + 1, 0).getDate();
   const today = isoOf(now.getFullYear(), now.getMonth(), now.getDate());
-  const title = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const title = first.toLocaleDateString(DATE_LOCALE, { month: 'long', year: 'numeric' });
   const prev = () => { if (m === 0) { setY(y - 1); setM(11); } else setM(m - 1); };
   const next = () => { if (m === 11) { setY(y + 1); setM(0); } else setM(m + 1); };
 

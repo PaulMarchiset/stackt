@@ -1,6 +1,6 @@
 'use client';
 
-import type { Project, ProjectGroup } from '@/lib/types';
+import type { BoardProject, ProjectGroup } from '@/lib/types';
 import { groupColor, sortGroups } from '@/lib/grouping';
 import { isAfterMidpoint } from '@/lib/useDragSort';
 import { versionTheme } from '@/lib/util';
@@ -34,7 +34,7 @@ export default function ProjectCard({
   project, meta, groups, menuOpen,
   onMenu, onEdit, onDelete, onToggleFavorite, onMove, onNewGroup, drag
 }: {
-  project: Project;
+  project: BoardProject;
   meta: string;
   groups: ProjectGroup[];
   menuOpen: boolean;
