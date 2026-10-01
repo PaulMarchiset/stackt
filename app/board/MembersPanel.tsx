@@ -87,7 +87,7 @@ export default function MembersPanel({
        written from here (the policy allows an owner), but the invitation email
        cannot — the Brevo key is server-only. The route does both, and applies
        the per-hour cap that stops the app being used as a mail relay. */
-    let res: { ok?: boolean; emailed?: boolean; error?: string };
+    let res: { ok?: boolean; emailed?: boolean; joined?: boolean; error?: string };
     try {
       const r = await fetch('/api/invites', {
         method: 'POST',
@@ -107,12 +107,18 @@ export default function MembersPanel({
 
     setEmail('');
     setNote({
-      /* Said plainly when the mail didn't go: the invitation is real either
-         way, and letting someone believe a message was sent when it wasn't is
-         how a teammate ends up waiting for nothing. */
-      text: res.emailed
-        ? `Invited ${addr}. They join as soon as they sign in.`
-        : `${addr} is invited, but the email could not be sent — tell them to sign in with that address.`,
+      /* Four messages because there are two independent facts to report, and
+         getting either one wrong leaves somebody waiting for nothing: whether
+         they have access *now* (an existing account is added on the spot; an
+         address with no account keeps an invitation until they sign in), and
+         whether the mail actually went. */
+      text: res.joined
+        ? res.emailed
+          ? `${addr} now has access to this project.`
+          : `${addr} now has access, but the email could not be sent — tell them yourself.`
+        : res.emailed
+          ? `Invited ${addr}. They join as soon as they sign in with that address.`
+          : `${addr} is invited, but the email could not be sent — tell them to sign in with that address.`,
       bad: !res.emailed
     });
     void load();

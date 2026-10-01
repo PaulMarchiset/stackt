@@ -34,6 +34,23 @@ export default async function ProjectsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  /* The safety net under invite_to_project(). Invitations to an address with no
+     account yet still wait in project_invites, and until this call existed the
+     only thing that redeemed them was the sign-in path — so anyone who signed
+     up, stayed signed in, and was invited afterwards saw nothing and had no way
+     to make the board appear short of signing out.
+
+     Serial, not in the Promise.all below: a membership written after the
+     projects SELECT has already run would not show up until the next load,
+     which is the whole failure this is here to prevent. It costs an index probe
+     on project_invites and returns without writing when there is nothing
+     addressed to this person, which is nearly always.
+
+     Never allowed to fail the page: not reaching a shared project is a smaller
+     failure than not reaching your own. */
+  const { error: claimErr } = await supabase.rpc('claim_project_invites');
+  if (claimErr) console.error('claim_project_invites failed:', claimErr.message);
+
   const [{ data: projects }, { data: cards }, { data: groups }, { data: members }] = await Promise.all([
     supabase.from('projects').select('*').order('created_at'),
     supabase.from('cards').select('id, project_id, type, done'),

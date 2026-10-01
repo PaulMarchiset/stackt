@@ -7,32 +7,42 @@ import { createClient } from '@/lib/supabase/server';
 /**
  * Invite someone to a project, and tell them about it.
  *
- * The row could be inserted straight from the browser — the RLS policy already
- * restricts it to owners. It goes through here because the *email* cannot: the
- * Brevo key is server-only and must never reach a bundle.
+ * The decision of *what an invitation is* lives in invite_to_project(): if the
+ * address already belongs to a confirmed account the person becomes a member on
+ * the spot, and only an address with no account behind it leaves a row in
+ * project_invites to be claimed at sign-in. That used to be the only path, and
+ * it is what made a shared board invisible to anyone who was already signed in
+ * — they never passed through the sign-in code that redeems invitations.
  *
- * The insert still runs on the caller's own session, so the authorization is
- * the invites_insert_owner policy, exactly as it would be from the client. This
- * route holds no elevated credential of any kind — deliberately, since the
- * point of the recent work was to stop spreading the service-role key around.
+ * It goes through here rather than straight from the browser because the
+ * *email* cannot: the Brevo key is server-only and must never reach a bundle.
+ * The RPC still runs on the caller's own session and checks ownership itself,
+ * so this route holds no elevated credential of any kind — deliberately, since
+ * the point of the recent work was to stop spreading the service-role key
+ * around.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-/* An authenticated user can make this server send mail to an address they
-   choose. Uncapped, that is an open relay wearing a free signup as a costume:
-   sign up, own a project, and post addresses in a loop from a domain whose
-   reputation is not yours. The cap is per hour and per inviter, counted from
-   the invitations themselves so there is no extra state to keep.
-
-   Generous on purpose — onboarding a real team of eight in one sitting must
-   not trip it; sending a hundred must. */
-const INVITES_PER_HOUR = 10;
 
 /* Deliberately loose. Real address validation is delivery: this only rejects
    what is obviously not an address, so the error comes back as a message
    instead of a bounce. */
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+
+/* Everything invite_to_project() can answer. The per-hour cap that stops a free
+   signup being used as a mail relay now lives in there too: it has to count
+   memberships as well as invitations, and only the function can see both. */
+type Outcome = 'member' | 'invited' | 'already_member' | 'already_invited' | 'self' | 'rate_limited';
+
+const REFUSALS: Partial<Record<Outcome, { error: string; status: number }>> = {
+  already_member: { error: 'That person is already on this project.', status: 409 },
+  already_invited: { error: 'That person has already been invited.', status: 409 },
+  self: { error: 'You are already on this project.', status: 400 },
+  rate_limited: {
+    error: 'That is a lot of invitations at once — try again in an hour.',
+    status: 429
+  }
+};
 
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) {
@@ -63,39 +73,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'You are already on this project.' }, { status: 400 });
   }
 
-  // --- Rate limit -----------------------------------------------------------
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await supabase
-    .from('project_invites')
-    .select('id', { count: 'exact', head: true })
-    .eq('invited_by', user.id)
-    .gte('created_at', since);
-  if ((count ?? 0) >= INVITES_PER_HOUR) {
-    return NextResponse.json(
-      { error: 'That is a lot of invitations at once — try again in an hour.' },
-      { status: 429 }
-    );
-  }
-
   // --- The invitation itself ------------------------------------------------
-  // RLS decides whether this user may invite to this project; a refusal here is
-  // an authorization failure, not a bug.
-  const { error: insErr } = await supabase
-    .from('project_invites')
-    .insert({ project_id: projectId, email, invited_by: user.id });
+  /* The function checks ownership itself and raises if this user is not an
+     owner — a thrown error here is an authorization failure, not a bug. The
+     outcomes it *returns* are the ordinary ones the person typing needs to see.
+     Nothing was written for any of those. */
+  const { data, error: rpcErr } = await supabase.rpc('invite_to_project', {
+    p: projectId,
+    addr: email
+  });
 
-  if (insErr) {
-    const duplicate = insErr.code === '23505';
-    return NextResponse.json(
-      { error: duplicate ? 'That person has already been invited.' : 'Could not create that invitation.' },
-      { status: duplicate ? 409 : 403 }
-    );
+  if (rpcErr) {
+    console.error('invite_to_project failed:', rpcErr.message);
+    return NextResponse.json({ error: 'Could not create that invitation.' }, { status: 403 });
   }
+
+  const outcome = data as Outcome;
+  const refusal = REFUSALS[outcome];
+  if (refusal) {
+    return NextResponse.json({ error: refusal.error }, { status: refusal.status });
+  }
+
+  /* The one thing that changes for the recipient: 'member' means they can open
+     the board right now, 'invited' means the address has no account yet and the
+     invitation waits for their first sign-in. The panel says different things
+     for the two, because "they'll join when they sign in" told to someone who
+     is already signed in is how this went wrong in the first place. */
+  const joined = outcome === 'member';
 
   // --- Telling them ---------------------------------------------------------
-  /* A failure here is reported but not fatal: the invitation exists and will be
-     claimed the moment they sign in, so undoing it would be the harsher
-     outcome. The caller is told, and can pass the word along by hand. */
+  /* A failure here is reported but not fatal: the access (or the invitation) is
+     real either way, so undoing it would be the harsher outcome. The caller is
+     told, and can pass the word along by hand. */
   try {
     await getEmailProvider().send({
       to: email,
@@ -104,8 +113,8 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error('invite email failed:', e instanceof Error ? e.message : String(e));
-    return NextResponse.json({ ok: true, emailed: false });
+    return NextResponse.json({ ok: true, emailed: false, joined });
   }
 
-  return NextResponse.json({ ok: true, emailed: true });
+  return NextResponse.json({ ok: true, emailed: true, joined });
 }
