@@ -1,21 +1,33 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Card, CardDraft, CardType, Status, Version } from '@/lib/types';
+import type { Card, CardComment, CardDraft, CardType, ProjectMember, Status, Version } from '@/lib/types';
 import { suggestNextVersion, versionColor } from '@/lib/util';
 import { useBoardDevMode } from '@/lib/devModeContext';
 import { vocab } from '@/lib/labels';
 import { IconPlus, IconTick } from '@/app/components/icons';
 import DateField from './DateField';
+import AssigneePicker from './AssigneePicker';
+import CardComments from './CardComments';
 
 export default function CardEditor({
   versions, card, status, defaultType, defaultDate, defaultVersion, bare,
-  onCreateVersion, onSubmit, onCancel
+  projectId, assigneeIds = [], members = [],
+  comments = [], commentUserId = '',
+  onAssigneesChange, onAddComment, onEditComment, onDeleteComment,
+  onCreateVersion, onSubmit, onCancel, demo = false
 }: {
   versions: Version[]; card?: Card; status: Status;
   defaultType?: CardType; defaultDate?: string; defaultVersion?: string; bare?: boolean;
+  projectId?: string; assigneeIds?: string[]; members?: ProjectMember[];
+  comments?: CardComment[]; commentUserId?: string;
+  onAssigneesChange?: (ids: string[]) => void;
+  onAddComment?: (body: string, mentionedIds: string[]) => Promise<unknown>;
+  onEditComment?: (id: string, body: string) => void;
+  onDeleteComment?: (id: string) => void;
   onCreateVersion: (name: string) => Promise<Version | null>;
   onSubmit: (v: CardDraft) => void; onCancel: () => void;
+  demo?: boolean;
 }) {
   const devMode = useBoardDevMode();
   const v = vocab(devMode);
@@ -158,6 +170,14 @@ export default function CardEditor({
                 onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }} />
             </div>
           </>
+        )}
+        {projectId && onAssigneesChange && (
+          <AssigneePicker projectId={projectId} selected={assigneeIds} onChange={onAssigneesChange} demo={demo} />
+        )}
+        {card && projectId && onAddComment && onEditComment && onDeleteComment && (
+          <CardComments projectId={projectId} cardId={card.id} userId={commentUserId}
+            comments={comments} members={members.length ? members : undefined}
+            onAdd={onAddComment} onEdit={onEditComment} onDelete={onDeleteComment} demo={demo} />
         )}
         <div className="edit-actions">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>

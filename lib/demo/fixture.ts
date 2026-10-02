@@ -1,4 +1,4 @@
-import type { Card, HeaderItem, BoardProject, ProjectGroup, Version } from '@/lib/types';
+import type { Card, CardAssignee, CardComment, HeaderItem, BoardProject, ProjectGroup, Version } from '@/lib/types';
 
 /**
  * The board a screenshot should find.
@@ -231,8 +231,21 @@ export interface DemoData {
   groups: ProjectGroup[];
   versions: Version[];
   cards: Card[];
+  assignees: CardAssignee[];
+  comments: CardComment[];
   headerItems: HeaderItem[];
 }
+
+const ASSIGNEES: CardAssignee[] = [
+  { card_id: 'demo-card-1', project_id: 'demo-stackt', user_id: DEMO_USER.id, created_at: '2026-01-04T09:00:00Z' },
+  { card_id: 'demo-card-1', project_id: 'demo-stackt', user_id: 'demo-mate-1', created_at: '2026-01-04T09:00:00Z' },
+  { card_id: 'demo-card-7', project_id: 'demo-stackt', user_id: 'demo-mate-2', created_at: '2026-01-04T09:00:00Z' }
+];
+
+const COMMENTS: CardComment[] = [
+  { id: 'demo-comment-1', card_id: 'demo-card-1', project_id: 'demo-stackt', user_id: 'demo-mate-1', body: '@demo@stackt.app can you confirm the band heading copy before I merge?', created_at: '2026-01-05T10:00:00Z', updated_at: '2026-01-05T10:00:00Z' },
+  { id: 'demo-comment-2', card_id: 'demo-card-7', project_id: 'demo-stackt', user_id: DEMO_USER.id, body: 'Repro on iPhone SE only — scrolling sideways should fix it.', created_at: '2026-01-06T10:00:00Z', updated_at: '2026-01-06T10:00:00Z' }
+];
 
 /* Fresh copies on every call — the demo is interactive, and one visit's edits
    must not leak into the next render. */
@@ -242,6 +255,8 @@ export function demoData(): DemoData {
     groups: GROUPS.map((g) => ({ ...g })),
     versions: VERSIONS.map((v) => ({ ...v })),
     cards: CARDS.map((c) => ({ ...c })),
+    assignees: ASSIGNEES.map((a) => ({ ...a })),
+    comments: COMMENTS.map((c) => ({ ...c })),
     headerItems: HEADER_ITEMS.map((h) => ({ ...h }))
   };
 }

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { createDemoClient } from '@/lib/demo/db';
-import type { Card, CardDraft, EditTarget, BoardProject, Status, Version } from '@/lib/types';
+import type { Card, CardAssignee, CardComment, CardDraft, CardMention, EditTarget, BoardProject, Status, Version } from '@/lib/types';
 import type { ImportBlock } from '@/lib/importText';
 import { usePersist } from '@/lib/usePersist';
 import { useToast } from '@/lib/useToast';
@@ -25,12 +25,17 @@ import { useToast } from '@/lib/useToast';
  */
 export function useBoardStore(
   initialProjects: BoardProject[], initialCards: Card[], initialVersions: Version[],
-  userId: string, demo = false
+  userId: string, demo = false,
+  initialAssignees: CardAssignee[] = [], initialComments: CardComment[] = [],
+  initialMentions: CardMention[] = []
 ) {
   const supabase = useMemo(() => (demo ? createDemoClient() : createClient()), [demo]);
   const [projects, setProjects] = useState<BoardProject[]>(initialProjects);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [versions, setVersions] = useState<Version[]>(initialVersions);
+  const [assignees, setAssignees] = useState<CardAssignee[]>(initialAssignees);
+  const [comments, setComments] = useState<CardComment[]>(initialComments);
+  const [mentions, setMentions] = useState<CardMention[]>(initialMentions);
   const { toast, showToast } = useToast();
   const { saving, persist, persistRow } = usePersist(showToast);
 
@@ -50,13 +55,55 @@ export function useBoardStore(
      state twice. `updated_at` decides who wins — the row that reaches us is the
      one the database committed, so it is newer than anything we hold except a
      local edit we have not sent yet, which is what heldCard protects. */
-  function applyRemote(e: { table: 'cards' | 'versions'; type: string; row: Record<string, unknown> }) {
+  function applyRemote(e: { table: 'cards' | 'versions' | 'card_assignees' | 'card_comments' | 'card_mentions'; type: string; row: Record<string, unknown> }) {
+    if (e.table === 'card_assignees') {
+      const key = `${e.row.card_id as string}:${e.row.user_id as string}`;
+      if (e.type === 'DELETE') {
+        setAssignees((as) => as.filter((a) => `${a.card_id}:${a.user_id}` !== key));
+        return;
+      }
+      const row = e.row as unknown as CardAssignee;
+      setAssignees((as) => (as.some((a) => a.card_id === row.card_id && a.user_id === row.user_id)
+        ? as.map((a) => (a.card_id === row.card_id && a.user_id === row.user_id ? { ...a, ...row } : a))
+        : [...as, row]));
+      return;
+    }
+
+    if (e.table === 'card_comments') {
+      const id = e.row.id as string | undefined;
+      if (!id) return;
+      if (e.type === 'DELETE') {
+        setComments((cs) => cs.filter((c) => c.id !== id));
+        return;
+      }
+      const row = e.row as unknown as CardComment;
+      setComments((cs) => (cs.some((c) => c.id === id)
+        ? cs.map((c) => (c.id === id ? { ...c, ...row } : c))
+        : [...cs, row]));
+      return;
+    }
+
+    if (e.table === 'card_mentions') {
+      const key = `${e.row.comment_id as string}:${e.row.mentioned_user_id as string}`;
+      if (e.type === 'DELETE') {
+        setMentions((ms) => ms.filter((m) => `${m.comment_id}:${m.mentioned_user_id}` !== key));
+        return;
+      }
+      const row = e.row as unknown as CardMention;
+      setMentions((ms) => (ms.some((m) => m.comment_id === row.comment_id && m.mentioned_user_id === row.mentioned_user_id)
+        ? ms.map((m) => (m.comment_id === row.comment_id && m.mentioned_user_id === row.mentioned_user_id ? { ...m, ...row } : m))
+        : [...ms, row]));
+      return;
+    }
+
     const id = e.row.id as string | undefined;
     if (!id) return;
 
     if (e.table === 'cards') {
       if (e.type === 'DELETE') {
         setCards((cs) => cs.filter((c) => c.id !== id));
+        setAssignees((as) => as.filter((a) => a.card_id !== id));
+        setComments((cs) => cs.filter((c) => c.card_id !== id));
         return;
       }
       if (heldCard.current === id) return;
@@ -82,15 +129,24 @@ export function useBoardStore(
      that nobody delivered. Rows for other projects are left alone, so switching
      tabs does not throw away what is already loaded. */
   async function resyncProject(projectId: string) {
-    const [{ data: freshCards }, { data: freshVersions }] = await Promise.all([
+    const [{ data: freshCards }, { data: freshVersions }, { data: freshAssignees }, { data: freshComments }] = await Promise.all([
       supabase.from('cards').select('*').eq('project_id', projectId),
-      supabase.from('versions').select('*').eq('project_id', projectId)
+      supabase.from('versions').select('*').eq('project_id', projectId),
+      supabase.from('card_assignees').select('*').eq('project_id', projectId),
+      supabase.from('card_comments').select('*').eq('project_id', projectId).order('created_at')
     ]);
     if (freshCards) {
       setCards((cs) => [...cs.filter((c) => c.project_id !== projectId), ...(freshCards as Card[])]);
     }
     if (freshVersions) {
       setVersions((vs) => [...vs.filter((z) => z.project_id !== projectId), ...(freshVersions as Version[])]);
+    }
+    if (freshAssignees) {
+      setAssignees((as) => [...as.filter((a) => a.project_id !== projectId), ...(freshAssignees as CardAssignee[])]);
+    }
+    if (freshComments) {
+      const ids = new Set((freshCards as Card[] | null ?? []).map((c) => c.id));
+      setComments((cs) => [...cs.filter((c) => c.project_id !== projectId), ...((freshComments as CardComment[]).filter((c) => ids.size === 0 || ids.has(c.card_id)))]);
     }
   }
 
@@ -337,13 +393,104 @@ export function useBoardStore(
     return (created as Card[]).length;
   }
 
+  /* ---------- Assignees (many responsibles per card) ----------
+     Anyone on the project can assign anyone — like moving a card, not like
+     changing a membership. Optimistic: local state first, write follows. */
+  const cardAssignees = (cardId: string) => assignees.filter((a) => a.card_id === cardId);
+
+  async function setCardAssignees(projectId: string, cardId: string, userIds: string[]) {
+    const prev = assignees.filter((a) => a.card_id === cardId);
+    const next = [...new Set(userIds.filter(Boolean))];
+    setAssignees((as) => [
+      ...as.filter((a) => a.card_id !== cardId),
+      ...next.map((user_id) => ({ card_id: cardId, project_id: projectId, user_id, created_at: new Date().toISOString() }))
+    ]);
+    const prevIds = new Set(prev.map((a) => a.user_id));
+    const nextIds = new Set(next);
+    const toAdd = next.filter((id) => !prevIds.has(id));
+    const toDel = [...prevIds].filter((id) => !nextIds.has(id));
+    if (toAdd.length) {
+      await persist(
+        supabase.from('card_assignees').insert(toAdd.map((user_id) => ({ card_id: cardId, project_id: projectId, user_id }))),
+        { message: 'Could not assign — try again.', onError: () => setAssignees((as) => [...as.filter((a) => a.card_id !== cardId), ...prev]) }
+      );
+    }
+    for (const uid of toDel) {
+      void persist(supabase.from('card_assignees').delete().eq('card_id', cardId).eq('user_id', uid));
+    }
+  }
+
+  /* ---------- Comments + @mentions ----------
+     Posting goes through add_comment_with_mentions() so the comment and its
+     pings land atomically. Editing/deleting your own uses plain table writes
+     (RLS enforces "own only"). */
+  const cardComments = (cardId: string) =>
+    comments.filter((c) => c.card_id === cardId).sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+  async function addComment(cardId: string, body: string, mentionedIds: string[]): Promise<CardComment | null> {
+    const text = body.trim();
+    if (!text) return null;
+    const created = await persistRow(
+      supabase.rpc('add_comment_with_mentions', { c: cardId, b: text, mentioned_ids: mentionedIds }),
+      { message: 'Could not post comment — try again.' }
+    );
+    if (created) {
+      /* PostgREST returns a lone composite as an object, but a SETOF-shaped
+         answer (or a future returns-table rewrite) arrives as an array.
+         Accept either so posting works against the real RPC and the demo stub
+         alike — a wrong guess here would append garbage to the thread. */
+      const raw = created as unknown as CardComment | CardComment[];
+      const row = Array.isArray(raw) ? raw[0] : raw;
+      if (!row || typeof row.id !== 'string') return null;
+      setComments((cs) => (cs.some((c) => c.id === row.id) ? cs.map((c) => (c.id === row.id ? { ...c, ...row } : c)) : [...cs, row]));
+      if (mentionedIds.length) {
+        // Refresh mentions so the bell lights up without waiting for realtime.
+        const { data } = await supabase.from('card_mentions').select('*').eq('comment_id', row.id);
+        if (data) setMentions((ms) => [...ms, ...((data as CardMention[]).filter((m) => !ms.some((x) => x.comment_id === m.comment_id && x.mentioned_user_id === m.mentioned_user_id)))]);
+      }
+      // Best-effort email ping (server route reuses the Brevo provider;
+      // locally EMAIL_PROVIDER=console just logs). Never blocks posting.
+      if (mentionedIds.length && !demo) {
+        void fetch('/api/comments/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commentId: row.id })
+        }).catch(() => {});
+      }
+      return row;
+    }
+    return null;
+  }
+
+  function editComment(id: string, body: string) {
+    const text = body.trim();
+    if (!text) return;
+    setComments((cs) => cs.map((c) => (c.id === id ? { ...c, body: text } : c)));
+    void persist(supabase.from('card_comments').update({ body: text }).eq('id', id));
+  }
+
+  function deleteComment(id: string) {
+    setComments((cs) => cs.filter((c) => c.id !== id));
+    setMentions((ms) => ms.filter((m) => m.comment_id !== id));
+    void persist(supabase.from('card_comments').delete().eq('id', id));
+  }
+
+  function markMentionsRead(commentIds: string[]) {
+    if (!commentIds.length) return;
+    setMentions((ms) => ms.map((m) => (commentIds.includes(m.comment_id) && m.mentioned_user_id === userId ? { ...m, read_at: new Date().toISOString() } : m)));
+    void persist(supabase.from('card_mentions').update({ read_at: new Date().toISOString() }).in('comment_id', commentIds).eq('mentioned_user_id', userId));
+  }
+
+  const unreadMentions = mentions.filter((m) => m.mentioned_user_id === userId && !m.read_at);
+
   return {
-    projects, cards, versions, saving, toast, showToast,
+    projects, cards, versions, assignees, comments, mentions, unreadMentions, saving, toast, showToast,
     setProjects,   // local-only edits (the project-name input types before it saves)
     patchProject, setRemind, moveProjectBefore, commitProjectOrder,
     supabase, applyRemote, resyncProject, holdCard,
     addCard, patchCard, deleteCard, moveCard, toggleDone, rescheduleCard, submitCard, importBlocks,
-    ensureVersion, renameVersion, mergeVersion, deleteVersion, setVersionColor, setVersionShipDate, toggleVersionCompleted
+    ensureVersion, renameVersion, mergeVersion, deleteVersion, setVersionColor, setVersionShipDate, toggleVersionCompleted,
+    cardAssignees, setCardAssignees, cardComments, addComment, editComment, deleteComment, markMentionsRead
   };
 }
 

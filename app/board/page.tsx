@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { DEMO_USER, demoData } from '@/lib/demo/fixture';
 import { isDemo } from '@/lib/demo/server';
-import { DEFAULT_USER_PREFS, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
+import { DEFAULT_USER_PREFS, type CardAssignee, type CardComment, type CardMention, type HeaderItem, type Project, type Card, type ProjectGroup, type Version } from '@/lib/types';
 import { parseHeaderItems } from '@/lib/grouping';
 import { withPersonal, type MembershipRow } from '@/lib/personal';
 import BoardApp from './BoardApp';
@@ -26,6 +26,8 @@ export default async function BoardPage({
         initialProjects={d.projects}
         initialCards={d.cards}
         initialVersions={d.versions}
+        initialAssignees={d.assignees}
+        initialComments={d.comments}
         groups={d.groups}
         headerItems={d.headerItems}
         userId={DEMO_USER.id}
@@ -42,7 +44,7 @@ export default async function BoardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const [{ data: projects }, { data: cards }, { data: versions }, { data: groups }, { data: prefs }, { data: members }] = await Promise.all([
+  const [{ data: projects }, { data: cards }, { data: versions }, { data: groups }, { data: prefs }, { data: members }, { data: assignees }, { data: comments }, { data: mentions }] = await Promise.all([
     supabase.from('projects').select('*').order('created_at'),
     supabase.from('cards').select('*').order('created_at'),
     supabase.from('versions').select('*').order('position'),
@@ -51,7 +53,12 @@ export default async function BoardPage({
     /* Scoped to this user: on a shared project the table also holds the other
        members' rows, and their reminder choice is not ours to read. */
     supabase.from('project_members')
-      .select('project_id, remind, favorite, position, group_id').eq('user_id', user.id)
+      .select('project_id, remind, favorite, position, group_id').eq('user_id', user.id),
+    // Best-effort: older databases may not have run migrations 0019/0020 yet.
+    // A missing table resolves as an error here, not a crash — default to [].
+    supabase.from('card_assignees').select('*').then((r) => ({ data: r.error ? [] : r.data })),
+    supabase.from('card_comments').select('*').order('created_at').then((r) => ({ data: r.error ? [] : r.data })),
+    supabase.from('card_mentions').select('*').eq('mentioned_user_id', user.id).then((r) => ({ data: r.error ? [] : r.data }))
   ]);
 
   /* The reader's own settings, merged onto the shared rows (lib/personal.ts).
@@ -72,6 +79,9 @@ export default async function BoardPage({
       initialProjects={withRemind}
       initialCards={(cards ?? []) as Card[]}
       initialVersions={(versions ?? []) as Version[]}
+      initialAssignees={((assignees as unknown as CardAssignee[] | null) ?? []) as CardAssignee[]}
+      initialComments={((comments as unknown as CardComment[] | null) ?? []) as CardComment[]}
+      initialMentions={((mentions as unknown as CardMention[] | null) ?? []) as CardMention[]}
       groups={(groups ?? []) as ProjectGroup[]}
       headerItems={items}
       userId={user.id}
