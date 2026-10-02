@@ -17,7 +17,7 @@ import type { createClient } from '@/lib/supabase/client';
  * the Next server, so it costs no serverless invocation at all.
  */
 
-export type LiveTable = 'cards' | 'versions';
+export type LiveTable = 'cards' | 'versions' | 'card_assignees' | 'card_comments' | 'card_mentions';
 
 export type LiveEvent = {
   table: LiveTable;
@@ -57,32 +57,33 @@ export function useLiveBoard({
        than showing stale data and saying so. */
     let hasSubscribed = false;
 
-    const forTable = (table: LiveTable) => ({
+    /* Filter is a convenience, not a boundary: it spares the browser messages
+       it would discard anyway. RLS is what decides (see migration 0015). */
+    const watch = (table: LiveTable) => ({
       event: '*' as const,
       schema: 'public',
       table,
-      /* A convenience, not a boundary: it spares the browser messages it would
-         discard anyway. What actually decides whether a row reaches this
-         subscriber is the RLS policy on the table (see migration 0015). */
       filter: `project_id=eq.${projectId}`
     });
 
+    const emit = (table: LiveTable) => (payload: { eventType: string; new: unknown; old: unknown }) => {
+      onEventRef.current({
+        table,
+        type: payload.eventType as LiveEvent['type'],
+        row: (payload.eventType === 'DELETE' ? payload.old : payload.new) as Record<string, unknown>
+      });
+    };
+
+    // card_mentions has no project_id — subscribe unfiltered; RLS decides.
+    const mentionFilter = { event: '*' as const, schema: 'public', table: 'card_mentions' as const };
+
     const channel = supabase
       .channel(`board:${projectId}`)
-      .on('postgres_changes', forTable('cards'), (payload) => {
-        onEventRef.current({
-          table: 'cards',
-          type: payload.eventType as LiveEvent['type'],
-          row: (payload.eventType === 'DELETE' ? payload.old : payload.new) as Record<string, unknown>
-        });
-      })
-      .on('postgres_changes', forTable('versions'), (payload) => {
-        onEventRef.current({
-          table: 'versions',
-          type: payload.eventType as LiveEvent['type'],
-          row: (payload.eventType === 'DELETE' ? payload.old : payload.new) as Record<string, unknown>
-        });
-      })
+      .on('postgres_changes', watch('cards'), emit('cards'))
+      .on('postgres_changes', watch('versions'), emit('versions'))
+      .on('postgres_changes', watch('card_assignees'), emit('card_assignees'))
+      .on('postgres_changes', watch('card_comments'), emit('card_comments'))
+      .on('postgres_changes', mentionFilter, emit('card_mentions'))
       .subscribe((status) => {
         if (status !== 'SUBSCRIBED') return;
         if (hasSubscribed) onResyncRef.current();

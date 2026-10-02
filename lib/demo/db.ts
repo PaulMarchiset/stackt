@@ -36,6 +36,9 @@ const DEFAULTS: Record<string, Row> = {
     comment: '', version_id: null, target_date: null, end_date: null,
     status: 'todo', done: false, done_at: null, type: 'update', branch: '', position: 0
   },
+  card_assignees: {},
+  card_comments: { body: '' },
+  card_mentions: { read_at: null },
   user_prefs: {}
 };
 
@@ -127,6 +130,18 @@ class DemoRpc implements PromiseLike<{ data: unknown; error: null }> {
       ];
     } else if (this.fn === 'project_invites_pending') {
       data = [{ id: 'demo-inv-1', email: 'noor@example.com', role: 'editor', expires_at: '2099-01-01T00:00:00Z' }];
+    } else if (this.fn === 'add_comment_with_mentions') {
+      /* Comment posting in demo mode: build the row the database would have
+         returned so the thread updates locally (nothing is kept — a reload
+         brings the fixture back, like every other demo write). */
+      const now = new Date().toISOString();
+      data = stamp('card_comments', {
+        card_id: this.args.c,
+        user_id: DEMO_USER.id,
+        body: (this.args.b as string) ?? '',
+        created_at: now,
+        updated_at: now
+      });
     }
 
     return Promise.resolve({ data, error: null }).then(onfulfilled, onrejected);

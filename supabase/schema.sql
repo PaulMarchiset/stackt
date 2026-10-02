@@ -132,6 +132,44 @@ create index if not exists cards_project_idx on public.cards (project_id, status
 create index if not exists cards_version_idx on public.cards (version_id);
 create index if not exists cards_done_at_idx on public.cards (project_id, done_at desc nulls last) where done;
 
+-- ---------- Card assignees (multiple responsibles per card, migration 0019) ----------
+create table if not exists public.card_assignees (
+  card_id    uuid not null references public.cards (id) on delete cascade,
+  project_id uuid not null references public.projects (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (card_id, user_id)
+);
+
+create index if not exists card_assignees_card_idx on public.card_assignees (card_id);
+create index if not exists card_assignees_project_idx on public.card_assignees (project_id);
+create index if not exists card_assignees_user_idx on public.card_assignees (user_id);
+
+-- ---------- Card comments + @mentions (migration 0020) ----------
+-- cards.comment stays the description; this is the discussion thread.
+create table if not exists public.card_comments (
+  id         uuid primary key default gen_random_uuid(),
+  card_id    uuid not null references public.cards (id) on delete cascade,
+  project_id uuid not null references public.projects (id) on delete cascade,
+  user_id    uuid default auth.uid() references auth.users (id) on delete set null,
+  body       text not null check (char_length(body) between 1 and 5000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists card_comments_card_idx on public.card_comments (card_id, created_at);
+create index if not exists card_comments_project_idx on public.card_comments (project_id);
+
+create table if not exists public.card_mentions (
+  comment_id        uuid not null references public.card_comments (id) on delete cascade,
+  mentioned_user_id uuid not null references auth.users (id) on delete cascade,
+  read_at           timestamptz,
+  created_at        timestamptz not null default now(),
+  primary key (comment_id, mentioned_user_id)
+);
+
+create index if not exists card_mentions_user_idx on public.card_mentions (mentioned_user_id, read_at);
+
 -- ---------- Membership: who can reach a project, and what they think of it ----------
 -- Guarded rather than run blind: an enum has no IF NOT EXISTS, and this file
 -- must stay re-runnable like every migration in the series.
@@ -407,6 +445,51 @@ begin
 end;
 $$;
 
+-- ---------- Comment + @pings in one call (migration 0020) ----------
+create or replace function public.add_comment_with_mentions(
+  c uuid, b text, mentioned_ids uuid[] default '{}'
+)
+returns public.card_comments
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  card_proj uuid;
+  created public.card_comments;
+  mid uuid;
+begin
+  if uid is null then raise exception 'add_comment_with_mentions: no authenticated user'; end if;
+  if b is null or char_length(btrim(b)) = 0 then raise exception 'add_comment_with_mentions: empty body'; end if;
+
+  select project_id into card_proj from public.cards where id = c;
+  if card_proj is null then raise exception 'add_comment_with_mentions: unknown card'; end if;
+  if not public.is_project_member(card_proj) then
+    raise exception 'add_comment_with_mentions: not a member of project %', card_proj;
+  end if;
+
+  insert into public.card_comments (card_id, project_id, user_id, body)
+  values (c, card_proj, uid, btrim(b))
+  returning * into created;
+
+  if mentioned_ids is not null then
+    foreach mid in array mentioned_ids loop
+      if mid is not null and mid <> uid and exists (
+        select 1 from public.project_members m
+        where m.project_id = card_proj and m.user_id = mid
+      ) then
+        insert into public.card_mentions (comment_id, mentioned_user_id)
+        values (created.id, mid)
+        on conflict do nothing;
+      end if;
+    end loop;
+  end if;
+
+  return created;
+end;
+$$;
+
 -- ============================================================
 -- Triggers
 -- ============================================================
@@ -421,6 +504,10 @@ create trigger versions_set_updated_at before update on public.versions
 
 drop trigger if exists cards_set_updated_at on public.cards;
 create trigger cards_set_updated_at before update on public.cards
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists card_comments_set_updated_at on public.card_comments;
+create trigger card_comments_set_updated_at before update on public.card_comments
   for each row execute function public.set_updated_at();
 
 drop trigger if exists email_prefs_set_updated_at on public.email_prefs;
@@ -462,6 +549,9 @@ alter table public.project_members enable row level security;
 alter table public.project_invites enable row level security;
 alter table public.versions        enable row level security;
 alter table public.cards           enable row level security;
+alter table public.card_assignees  enable row level security;
+alter table public.card_comments   enable row level security;
+alter table public.card_mentions   enable row level security;
 alter table public.email_prefs     enable row level security;
 alter table public.user_prefs      enable row level security;
 
@@ -487,6 +577,7 @@ revoke all on function public.remove_project_member(uuid, uuid) from public, ano
 revoke all on function public.project_members_detailed(uuid) from public, anon;
 revoke all on function public.project_invites_pending(uuid)  from public, anon;
 revoke all on function public.delete_own_account()           from public, anon;
+revoke all on function public.add_comment_with_mentions(uuid, text, uuid[]) from public, anon;
 
 grant execute on function public.is_project_member(uuid)        to authenticated;
 grant execute on function public.is_project_owner(uuid)         to authenticated;
@@ -497,6 +588,7 @@ grant execute on function public.remove_project_member(uuid, uuid) to authentica
 grant execute on function public.project_members_detailed(uuid) to authenticated;
 grant execute on function public.project_invites_pending(uuid)  to authenticated;
 grant execute on function public.delete_own_account()           to authenticated;
+grant execute on function public.add_comment_with_mentions(uuid, text, uuid[]) to authenticated;
 
 -- ---------- projects ----------
 -- Membership everywhere except DELETE, which stays with the owner: an editor
@@ -577,6 +669,75 @@ drop policy if exists "cards_delete_member" on public.cards;
 create policy "cards_delete_member" on public.cards for delete
   using (public.is_project_member(project_id));
 
+-- ---------- card_assignees ----------
+drop policy if exists "assignees_select_member" on public.card_assignees;
+create policy "assignees_select_member" on public.card_assignees for select
+  using (public.is_project_member(project_id));
+drop policy if exists "assignees_insert_member" on public.card_assignees;
+create policy "assignees_insert_member" on public.card_assignees for insert
+  with check (public.is_project_member(project_id));
+drop policy if exists "assignees_delete_member" on public.card_assignees;
+create policy "assignees_delete_member" on public.card_assignees for delete
+  using (public.is_project_member(project_id));
+
+-- ---------- card_comments ----------
+drop policy if exists "comments_select_member" on public.card_comments;
+create policy "comments_select_member" on public.card_comments for select
+  using (public.is_project_member(project_id));
+drop policy if exists "comments_insert_member" on public.card_comments;
+create policy "comments_insert_member" on public.card_comments for insert
+  with check (public.is_project_member(project_id) and user_id = (select auth.uid()));
+drop policy if exists "comments_update_own" on public.card_comments;
+create policy "comments_update_own" on public.card_comments for update
+  using (user_id = (select auth.uid()) and public.is_project_member(project_id))
+  with check (user_id = (select auth.uid()) and public.is_project_member(project_id));
+drop policy if exists "comments_delete_own" on public.card_comments;
+create policy "comments_delete_own" on public.card_comments for delete
+  using (user_id = (select auth.uid()) or public.is_project_owner(project_id));
+
+-- ---------- card_mentions ----------
+drop policy if exists "mentions_select_member" on public.card_mentions;
+create policy "mentions_select_member" on public.card_mentions for select
+  using (
+    exists (
+      select 1 from public.card_comments c
+      where c.id = card_mentions.comment_id and public.is_project_member(c.project_id)
+    )
+  );
+drop policy if exists "mentions_insert_member" on public.card_mentions;
+create policy "mentions_insert_member" on public.card_mentions for insert
+  with check (
+    exists (
+      select 1 from public.card_comments c
+      where c.id = card_mentions.comment_id and public.is_project_member(c.project_id)
+    )
+  );
+drop policy if exists "mentions_update_reader" on public.card_mentions;
+create policy "mentions_update_reader" on public.card_mentions for update
+  using (
+    mentioned_user_id = (select auth.uid())
+    or exists (
+      select 1 from public.card_comments c
+      where c.id = card_mentions.comment_id and c.user_id = (select auth.uid())
+    )
+  )
+  with check (
+    mentioned_user_id = (select auth.uid())
+    or exists (
+      select 1 from public.card_comments c
+      where c.id = card_mentions.comment_id and c.user_id = (select auth.uid())
+    )
+  );
+drop policy if exists "mentions_delete_author" on public.card_mentions;
+create policy "mentions_delete_author" on public.card_mentions for delete
+  using (
+    exists (
+      select 1 from public.card_comments c
+      where c.id = card_mentions.comment_id
+        and (c.user_id = (select auth.uid()) or public.is_project_owner(c.project_id))
+    )
+  );
+
 -- ---------- Personal tables: owner-only, never shared ----------
 drop policy if exists "project_groups_select_own" on public.project_groups;
 create policy "project_groups_select_own" on public.project_groups for select using (auth.uid() = user_id);
@@ -615,6 +776,8 @@ create policy "user_prefs_delete_own" on public.user_prefs for delete using (aut
 -- never arrive.
 alter table public.cards    replica identity full;
 alter table public.versions replica identity full;
+alter table public.card_assignees replica identity full;
+alter table public.card_comments replica identity full;
 
 do $$
 begin
@@ -625,5 +788,17 @@ begin
   if not exists (select 1 from pg_publication_tables
                  where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'versions') then
     alter publication supabase_realtime add table public.versions;
+  end if;
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'card_assignees') then
+    alter publication supabase_realtime add table public.card_assignees;
+  end if;
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'card_comments') then
+    alter publication supabase_realtime add table public.card_comments;
+  end if;
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'card_mentions') then
+    alter publication supabase_realtime add table public.card_mentions;
   end if;
 end $$;

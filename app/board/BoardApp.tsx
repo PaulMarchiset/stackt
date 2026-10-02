@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardDraft, type CardType, type EditTarget, type HeaderItem, type BoardProject, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
+import { COLUMNS, DEFAULT_USER_PREFS, type Card, type CardAssignee, type CardComment, type CardDraft, type CardMention, type CardType, type EditTarget, type HeaderItem, type BoardProject, type ProjectGroup, type Status, type TimelineViewProps, type Version } from '@/lib/types';
 import { sortCards, sortCompletedVersions, sortVersions, suggestNextVersion, todayISO } from '@/lib/util';
 import { headerIslands, projectSections } from '@/lib/grouping';
 import { useBoardStore } from '@/lib/useBoardStore';
@@ -42,18 +42,20 @@ type MobileSheet = { kind: 'project' } | { kind: 'menu' } | { kind: 'card'; id: 
  */
 export default function BoardApp({
   initialProjects, initialCards, initialVersions,
+  initialAssignees = [], initialComments = [], initialMentions = [],
   groups = [], headerItems = DEFAULT_USER_PREFS.header_items,
   userId, userEmail, userName = '', initialActiveId, demo = false
 }: {
   initialProjects: BoardProject[]; initialCards: Card[]; initialVersions: Version[];
+  initialAssignees?: CardAssignee[]; initialComments?: CardComment[]; initialMentions?: CardMention[];
   groups?: ProjectGroup[]; headerItems?: HeaderItem[];
   userId: string; userEmail: string; userName?: string; initialActiveId?: string | null;
   /* Screenshot mode: the rows are a fixture and every write is swallowed
      (lib/demo/fixture.ts · lib/demo/db.ts). The board itself is unchanged. */
   demo?: boolean;
 }) {
-  const store = useBoardStore(initialProjects, initialCards, initialVersions, userId, demo);
-  const { projects, cards, versions, saving, toast } = store;
+  const store = useBoardStore(initialProjects, initialCards, initialVersions, userId, demo, initialAssignees, initialComments, initialMentions);
+  const { projects, cards, versions, assignees, comments, saving, toast } = store;
   /* What heads the board is an account setting the board can edit in place —
      same hook, same composer as the settings page. */
   const selection = useHeaderItems(userId, headerItems, store.showToast, demo);
@@ -99,6 +101,34 @@ export default function BoardApp({
   };
 
   const project = projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
+
+  /* Members of the open project: assignee picker + @mention candidates + the
+     emails shown on avatars. Refreshed when the project changes. */
+  const [projectMembers, setProjectMembers] = useState<import('@/lib/types').ProjectMember[]>([]);
+  useEffect(() => {
+    if (!project) { setProjectMembers([]); return; }
+    let live = true;
+    void store.supabase.rpc('project_members_detailed', { p: project.id }).then(({ data }) => {
+      if (live) setProjectMembers(((data as import('@/lib/types').ProjectMember[]) ?? []));
+    });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id]);
+
+  const emailById = useMemo(() => new Map(projectMembers.map((m) => [m.user_id, m.email] as const)), [projectMembers]);
+  const assigneesOf = (cardId: string) => assignees.filter((a) => a.card_id === cardId);
+  const emailsOf = (cardId: string) => assigneesOf(cardId).map((a) => emailById.get(a.user_id) ?? 'Someone');
+  const commentsOf = (cardId: string) =>
+    comments.filter((c) => c.card_id === cardId).sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+  /* Opening a card marks your @pings in it as read — you have seen the thread. */
+  useEffect(() => {
+    const id = editing?.kind === 'edit' ? editing.id : null;
+    if (!id || demo) return;
+    const cids = comments.filter((c) => c.card_id === id).map((c) => c.id);
+    if (cids.length) store.markMentionsRead(cids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.kind === 'edit' ? editing.id : null]);
 
   /* Live updates, for the open board only. Watching every project a person
      belongs to would multiply the traffic by their project count to show them
@@ -367,12 +397,19 @@ export default function BoardApp({
                       {colCards.map((c, i) =>
                         editingCard(c.id) && !isMobile
                           ? <CardEditor key={c.id} versions={projVersions} card={c} status={c.status}
+                              projectId={project.id} demo={demo}
+                              assigneeIds={assigneesOf(c.id).map((a) => a.user_id)}
+                              members={projectMembers} comments={commentsOf(c.id)} commentUserId={userId}
+                              onAssigneesChange={(ids) => void store.setCardAssignees(project.id, c.id, ids)}
+                              onAddComment={(body, mids) => store.addComment(c.id, body, mids)}
+                              onEditComment={store.editComment} onDeleteComment={store.deleteComment}
                               onCreateVersion={createVersion}
                               onCancel={() => setEditing(null)}
                               onSubmit={(vals) => { void store.submitCard(project.id, vals, { kind: 'edit', id: c.id }); setEditing(null); }} />
                           : <BoardCard key={c.id} card={c} index={i} project={project}
                               version={c.version_id ? versionById.get(c.version_id) ?? null : null}
                               justMoved={c.id === justMoved} isMobile={isMobile}
+                              assigneeEmails={emailsOf(c.id)} commentCount={commentsOf(c.id).length}
                               onToggleDone={() => store.toggleDone(c.id)}
                               onEdit={() => setEditing({ kind: 'edit', id: c.id })}
                               onDelete={() => store.deleteCard(c.id)}
@@ -407,6 +444,14 @@ export default function BoardApp({
             card={mobileEditCard ?? undefined}
             status={mobileEditCard ? mobileEditCard.status : (mobileEditColumn as Status)}
             defaultType={newCardType} defaultDate={mobileEditCard ? undefined : newCardDate} defaultVersion={versionName(active)}
+            projectId={project.id} demo={demo}
+            assigneeIds={mobileEditCard ? assigneesOf(mobileEditCard.id).map((a) => a.user_id) : []}
+            members={projectMembers}
+            comments={mobileEditCard ? commentsOf(mobileEditCard.id) : []} commentUserId={userId}
+            onAssigneesChange={mobileEditCard ? (ids) => void store.setCardAssignees(project.id, mobileEditCard.id, ids) : undefined}
+            onAddComment={mobileEditCard ? (body, mids) => store.addComment(mobileEditCard.id, body, mids) : undefined}
+            onEditComment={mobileEditCard ? store.editComment : undefined}
+            onDeleteComment={mobileEditCard ? store.deleteComment : undefined}
             onCreateVersion={createVersion}
             onCancel={() => setEditing(null)}
             onSubmit={(vals) => {

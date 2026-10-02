@@ -32,6 +32,44 @@ export interface Card {
    (resolved to a version_id before persisting; '' means "no version"). */
 export type CardDraft = Partial<Card> & { versionName?: string };
 
+/* Who is responsible for a card. Many people can share one card — one row
+   each (migration 0019). project_id is denormalized for RLS + realtime. */
+export interface CardAssignee {
+  card_id: string;
+  project_id: string;
+  user_id: string;
+  created_at: string;
+}
+
+/* One message in a card's discussion thread (migration 0020).
+   cards.comment stays the description; this is the conversation. */
+export interface CardComment {
+  id: string;
+  card_id: string;
+  project_id: string;
+  user_id: string | null; // SET NULL when the author closes their account
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/* An @ping inside a comment. Unread (read_at null) = the bell lights up. */
+export interface CardMention {
+  comment_id: string;
+  mentioned_user_id: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+/* A project member as the sharing panel reports them — also the @mention
+   candidate list and the assignee picker source. */
+export interface ProjectMember {
+  user_id: string;
+  email: string;
+  role: 'owner' | 'editor';
+  joined_at: string;
+}
+
 /* What the board is editing right now — an existing card, or a new one headed
    for a given column. `null` (the state, not this type) means nothing is open.
    The store's submitCard takes the same value, so the board hands its edit

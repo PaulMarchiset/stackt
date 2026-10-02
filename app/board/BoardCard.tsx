@@ -16,6 +16,7 @@ import DatePill from './DatePill';
  */
 export default function BoardCard({
   card, version, project, index, justMoved, isMobile,
+  assigneeEmails = [], commentCount = 0,
   onToggleDone, onEdit, onDelete, onMenu, onReschedule
 }: {
   card: Card;
@@ -24,6 +25,8 @@ export default function BoardCard({
   index: number;
   justMoved: boolean;
   isMobile: boolean;
+  assigneeEmails?: string[];
+  commentCount?: number;
   onToggleDone: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -65,6 +68,19 @@ export default function BoardCard({
         {version && <span className="chip version">{version.name}</span>}
         <DatePill card={card} editable={!isMobile} onChange={onReschedule} />
         {card.branch && <BranchChip repoUrl={project.repo_url} branch={card.branch} />}
+        {assigneeEmails.length > 0 && (
+          <span className="chip assignees" title={assigneeEmails.join(', ')}>
+            {assigneeEmails.slice(0, 3).map((e) => (
+              <span key={e} className="assignee-dot" title={e}>{(e.trim()[0] || '?').toUpperCase()}</span>
+            ))}
+            {assigneeEmails.length > 3 && <span className="assignee-more">+{assigneeEmails.length - 3}</span>}
+          </span>
+        )}
+        {commentCount > 0 && (
+          <span className="chip comments" title={`${commentCount} comment${commentCount > 1 ? 's' : ''}`}>
+            💬 {commentCount}
+          </span>
+        )}
       </div>
     </article>
   );
